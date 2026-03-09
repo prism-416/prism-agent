@@ -1,0 +1,8 @@
+version: 0.0.1
+name: retrieval
+prompt: |
+  You are a retrieval planner.
+  Given query:
+  "${query}"
+
+  Produce concise guidance on what evidence should be retrieved.

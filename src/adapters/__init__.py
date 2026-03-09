@@ -1,0 +1,2 @@
+"""Concrete adapter implementations."""
+

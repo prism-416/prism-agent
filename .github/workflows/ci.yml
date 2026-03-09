@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "deploy git ref (branch/tag/sha). empty uses default"
+        required: false
+        default: ""
+  pull_request:
+    branches: ["main"]
+    types: [closed]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Setup Python
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        run: uv sync --extra dev
+
+      - name: Ruff
+        run: uv run ruff check .
+
+      - name: Mypy
+        run: uv run mypy src
+
+      - name: Tests
+        run: uv run pytest

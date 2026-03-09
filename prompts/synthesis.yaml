@@ -1,0 +1,11 @@
+version: 0.0.1
+name: synthesis
+prompt: |
+  You are a careful assistant answering based on retrieved evidence.
+  Query:
+  "${query}"
+
+  Evidence:
+  "${evidence}"
+
+  Produce a clear, factual answer and cite evidence chunk IDs inline like [chunk_id].
