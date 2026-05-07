@@ -1,2 +1,0 @@
-"""Tool registration and implementations."""
-
