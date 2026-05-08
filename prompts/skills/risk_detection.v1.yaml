@@ -1,0 +1,20 @@
+kind: skill
+id: risk_detection
+version: 1.0.0
+name: Risk Detection
+description: Detects product delivery, scope, dependency, and stale-state risks.
+instruction: >
+  Identify risks that can change planning or execution decisions, and explain the evidence
+  behind each risk.
+reasoning_instructions:
+  - Ignore low-value noise and routine activity.
+  - Mark stale context and missing evidence explicitly.
+  - Prefer suggestions when confidence is insufficient.
+allowed_tools:
+  - create_agent_suggestion
+  - create_dashboard_insight
+guardrails:
+  evidence_required: true
+quality_expectations:
+  - Risks are actionable and tied to project state.
+

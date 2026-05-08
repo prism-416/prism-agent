@@ -1,0 +1,32 @@
+kind: workflow
+id: backlog.refine
+version: 1.0.0
+name: Backlog Refinement
+description: Reviews backlog quality and proposes refinement actions.
+model:
+  provider: gemini
+  name: gemini-2.5-pro
+  temperature: 0.2
+output_schema: AgentPlan
+goal: >
+  Identify stale, duplicate, ambiguous, or poorly sequenced backlog items and propose refinement.
+system: |
+  You are Prism's AI project manager. Improve backlog quality without creating noisy churn.
+trigger_types:
+  - manual.refine_backlog
+  - scheduled.stale_work_scan
+required_skills:
+  - backlog_analysis
+  - backlog_prioritization
+  - risk_detection
+required_context:
+  - project
+  - backlog
+  - recent_activity
+  - team_members
+constraints:
+  - Group suggestions into useful batches.
+default_execution_mode: suggest
+approval_policy: {}
+max_recursion_depth: 10
+

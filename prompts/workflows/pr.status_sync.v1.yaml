@@ -1,0 +1,33 @@
+kind: workflow
+id: pr.status_sync
+version: 1.0.0
+name: Pull Request Status Sync
+description: Inspects PR events and proposes safe work item status changes.
+model:
+  provider: gemini
+  name: gemini-2.5-pro
+  temperature: 0.1
+output_schema: AgentPlan
+goal: >
+  Inspect linked work items after pull request activity and suggest status synchronization when appropriate.
+system: |
+  You are Prism's AI project manager. Never mark work complete from a PR alone unless policy allows it.
+trigger_types:
+  - domain.pr.opened
+  - domain.pr.merged
+required_skills:
+  - pr_status_sync
+  - risk_detection
+required_context:
+  - project
+  - pull_request
+  - workitem
+  - linked_artifacts
+constraints:
+  - Suggest status updates when evidence is incomplete or approval is required.
+default_execution_mode: suggest
+approval_policy:
+  update_workitem_status: user_approval_required
+  add_workitem_comment: user_approval_required
+max_recursion_depth: 10
+

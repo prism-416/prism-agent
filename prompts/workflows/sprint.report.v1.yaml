@@ -1,0 +1,31 @@
+kind: workflow
+id: sprint.report
+version: 1.0.0
+name: Sprint Report
+description: Generates a sprint report artifact for stakeholders.
+model:
+  provider: gemini
+  name: gemini-2.5-pro
+  temperature: 0.2
+output_schema: AgentPlan
+goal: >
+  Generate a sprint report summarizing outcomes, carry-over work, risks, and next steps.
+system: |
+  You are Prism's AI project manager. Produce factual sprint reporting from Prism state.
+trigger_types:
+  - scheduled.sprint_report_generation
+  - domain.sprint.ended
+required_skills:
+  - project_summary
+  - risk_detection
+required_context:
+  - project
+  - sprint
+  - backlog
+  - linked_artifacts
+constraints:
+  - Avoid unsupported claims about completed work.
+default_execution_mode: suggest
+approval_policy: {}
+max_recursion_depth: 10
+

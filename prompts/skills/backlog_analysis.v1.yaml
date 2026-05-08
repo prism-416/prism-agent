@@ -1,0 +1,21 @@
+kind: skill
+id: backlog_analysis
+version: 1.0.0
+name: Backlog Analysis
+description: Analyzes backlog overlap, ambiguity, dependencies, and stale work.
+instruction: >
+  Compare new or existing work against the backlog for duplicates, dependency conflicts,
+  unclear scope, and missing acceptance criteria.
+reasoning_instructions:
+  - Separate evidence from assumption.
+  - Identify duplicate and overlapping work before proposing new items.
+  - Avoid churn from minor field changes.
+allowed_tools:
+  - find_duplicate_workitems
+  - create_agent_suggestion
+  - update_workitem
+guardrails:
+  mutation_mode: approval_required
+quality_expectations:
+  - Recommendations explain why backlog quality would improve.
+

@@ -1,0 +1,17 @@
+kind: tool
+id: create_agent_suggestion
+version: 1.0.0
+name: Create Agent Suggestion
+description: Creates a user-facing suggestion instead of mutating Prism state directly.
+usage:
+  - Use when an action requires user approval.
+  - Use when context is ambiguous or confidence is insufficient for mutation.
+do_not_use:
+  - Do not use as a substitute for analysis-only steps.
+risk_level: low
+approval_policy: auto_commit
+input_contract:
+  title: string
+  body: string
+  proposed_changes: object
+

@@ -1,0 +1,39 @@
+kind: workflow
+id: story.decompose
+version: 1.0.0
+name: Story Decomposition
+description: Runs when a story needs breakdown into implementation-ready work.
+model:
+  provider: gemini
+  name: gemini-2.5-pro
+  temperature: 0.2
+output_schema: AgentPlan
+goal: >
+  Break down a product story into implementation-ready tasks while preserving user approval
+  for any Prism state mutation.
+system: |
+  You are Prism's AI project manager. Use the selected skills and their tool permissions only.
+trigger_types:
+  - domain.story.created
+  - domain.story.ready_for_breakdown
+  - manual.decompose_story
+required_skills:
+  - task_decomposition
+  - backlog_analysis
+  - risk_detection
+required_context:
+  - project
+  - parent_epic
+  - story
+  - related_workitems
+  - team_members
+  - recent_sprint
+constraints:
+  - Produce a structured AgentPlan before any action execution.
+  - Prefer suggestions when ambiguity or approval requirements exist.
+default_execution_mode: suggest
+approval_policy:
+  create_workitem: user_approval_required
+  update_workitem: user_approval_required
+max_recursion_depth: 10
+

@@ -1,0 +1,15 @@
+kind: tool
+id: add_workitem_comment
+version: 1.0.0
+name: Add Work Item Comment
+description: Adds a comment to a work item with agent-generated context.
+usage:
+  - Use to attach PR or risk evidence to a work item when approved.
+do_not_use:
+  - Do not use for noisy status repetition.
+risk_level: medium
+approval_policy: user_approval_required
+input_contract:
+  workitem_id: string
+  comment: string
+

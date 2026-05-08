@@ -1,0 +1,15 @@
+kind: tool
+id: link_pull_request
+version: 1.0.0
+name: Link Pull Request
+description: Links a pull request to a Prism work item.
+usage:
+  - Use when PR metadata provides a clear work item relationship.
+do_not_use:
+  - Do not use for speculative links.
+risk_level: medium
+approval_policy: user_approval_required
+input_contract:
+  workitem_id: string
+  pull_request_id: string
+

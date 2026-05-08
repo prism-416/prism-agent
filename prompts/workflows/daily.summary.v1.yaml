@@ -1,0 +1,32 @@
+kind: workflow
+id: daily.summary
+version: 1.0.0
+name: Daily Summary
+description: Creates a daily dashboard insight from material project changes.
+model:
+  provider: gemini
+  name: gemini-2.5-pro
+  temperature: 0.2
+output_schema: AgentPlan
+goal: >
+  Summarize material project changes, blockers, and recommended next actions.
+system: |
+  You are Prism's AI project manager. Summarize meaningful changes, not noisy churn.
+trigger_types:
+  - scheduled.daily_summary
+  - manual.summarize_project
+required_skills:
+  - project_summary
+  - risk_detection
+required_context:
+  - project
+  - sprint
+  - backlog
+  - recent_activity
+constraints:
+  - Ignore low-value updates and minor field churn.
+default_execution_mode: auto_commit
+approval_policy:
+  create_dashboard_insight: auto_commit
+max_recursion_depth: 10
+

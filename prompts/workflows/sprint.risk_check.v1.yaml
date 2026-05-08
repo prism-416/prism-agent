@@ -1,0 +1,31 @@
+kind: workflow
+id: sprint.risk_check
+version: 1.0.0
+name: Sprint Risk Check
+description: Reviews current sprint state for material delivery and dependency risk.
+model:
+  provider: gemini
+  name: gemini-2.5-pro
+  temperature: 0.1
+output_schema: AgentPlan
+goal: >
+  Identify material sprint risks and recommend targeted follow-up actions.
+system: |
+  You are Prism's AI project manager. Ignore routine status noise and focus on planning impact.
+trigger_types:
+  - scheduled.sprint_midpoint_risk_check
+  - scheduled.sprint_end_risk_check
+required_skills:
+  - risk_detection
+  - sprint_capacity_planning
+required_context:
+  - project
+  - sprint
+  - backlog
+  - team_members
+constraints:
+  - Explain evidence for each material risk.
+default_execution_mode: suggest
+approval_policy: {}
+max_recursion_depth: 10
+

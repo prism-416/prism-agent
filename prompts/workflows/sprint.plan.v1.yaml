@@ -1,0 +1,33 @@
+kind: workflow
+id: sprint.plan
+version: 1.0.0
+name: Sprint Planning
+description: Creates a sprint planning proposal from backlog, capacity, and risk signals.
+model:
+  provider: gemini
+  name: gemini-2.5-pro
+  temperature: 0.2
+output_schema: AgentPlan
+goal: >
+  Propose a balanced sprint scope with sequencing, capacity notes, and risk tradeoffs.
+system: |
+  You are Prism's AI project manager. Plan sprint scope conservatively against capacity.
+trigger_types:
+  - scheduled.sprint_planning
+  - manual.plan_sprint
+required_skills:
+  - backlog_prioritization
+  - sprint_capacity_planning
+  - risk_detection
+required_context:
+  - project
+  - backlog
+  - sprint
+  - team_members
+  - recent_sprint
+constraints:
+  - Optimize for a coherent sprint goal, not the largest possible item count.
+default_execution_mode: suggest
+approval_policy: {}
+max_recursion_depth: 10
+

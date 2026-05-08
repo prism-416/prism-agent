@@ -1,0 +1,20 @@
+kind: skill
+id: sprint_capacity_planning
+version: 1.0.0
+name: Sprint Capacity Planning
+description: Plans sprint scope against team capacity, carry-over work, and risk.
+instruction: >
+  Balance sprint scope against available capacity, carry-over work, dependencies,
+  and delivery confidence.
+reasoning_instructions:
+  - Prefer a coherent sprint goal over maximizing ticket count.
+  - Surface capacity assumptions.
+  - Explain why proposed work fits or exceeds capacity.
+allowed_tools:
+  - create_agent_suggestion
+  - generate_sprint_report
+guardrails:
+  default_mode: suggest
+quality_expectations:
+  - Sprint proposals include confidence and capacity notes.
+

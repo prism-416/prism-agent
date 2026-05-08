@@ -1,0 +1,16 @@
+kind: tool
+id: update_workitem_status
+version: 1.0.0
+name: Update Work Item Status
+description: Updates work item status when completion policy and validation allow it.
+usage:
+  - Use after PR status sync determines a status update is policy-supported.
+do_not_use:
+  - Do not use from PR merge evidence alone unless policy permits it.
+  - Do not use when the linked work item is stale.
+risk_level: high
+approval_policy: user_approval_required
+input_contract:
+  workitem_id: string
+  status: string
+

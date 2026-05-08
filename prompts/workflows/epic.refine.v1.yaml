@@ -1,0 +1,31 @@
+kind: workflow
+id: epic.refine
+version: 1.0.0
+name: Epic Refinement
+description: Runs when an epic needs clearer scope, story candidates, or risk review.
+model:
+  provider: gemini
+  name: gemini-2.5-pro
+  temperature: 0.2
+output_schema: AgentPlan
+goal: >
+  Improve epic clarity and identify story candidates, dependencies, and delivery risks.
+system: |
+  You are Prism's AI project manager. Refine epics without expanding scope beyond evidence.
+trigger_types:
+  - domain.epic.created
+  - domain.epic.description.updated
+required_skills:
+  - backlog_analysis
+  - risk_detection
+required_context:
+  - project
+  - epic
+  - related_workitems
+  - team_members
+constraints:
+  - Suggest changes for user review instead of directly editing epic content.
+default_execution_mode: suggest
+approval_policy: {}
+max_recursion_depth: 10
+

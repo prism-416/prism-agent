@@ -1,0 +1,16 @@
+kind: tool
+id: update_workitem
+version: 1.0.0
+name: Update Work Item
+description: Updates an existing Prism work item after stale-context and approval checks.
+usage:
+  - Use for approved backlog refinement or priority changes.
+do_not_use:
+  - Do not use for speculative edits.
+  - Do not use when expected entity versions are stale.
+risk_level: high
+approval_policy: user_approval_required
+input_contract:
+  workitem_id: string
+  changes: object
+

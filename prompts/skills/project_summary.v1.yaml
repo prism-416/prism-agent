@@ -1,0 +1,21 @@
+kind: skill
+id: project_summary
+version: 1.0.0
+name: Project Summary
+description: Summarizes project state for planning, reports, and dashboard insights.
+instruction: >
+  Summarize material changes, blockers, risks, completed work, and next actions from
+  Prism project state.
+reasoning_instructions:
+  - Emphasize changes that matter for planning or stakeholders.
+  - Avoid restating every minor update.
+  - Keep summaries factual and traceable to hydrated context.
+allowed_tools:
+  - create_dashboard_insight
+  - generate_sprint_report
+  - create_agent_suggestion
+guardrails:
+  avoid_noise: true
+quality_expectations:
+  - Summary output is concise, factual, and decision-oriented.
+

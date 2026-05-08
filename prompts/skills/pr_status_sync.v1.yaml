@@ -1,0 +1,22 @@
+kind: skill
+id: pr_status_sync
+version: 1.0.0
+name: Pull Request Status Sync
+description: Evaluates PR evidence against linked work item completion policy.
+instruction: >
+  Decide whether pull request activity justifies a status sync suggestion or safe update
+  for linked Prism work items.
+reasoning_instructions:
+  - Check linked work item state, merge status, test evidence, and completion policy.
+  - Do not infer completion from a PR alone when evidence is incomplete.
+  - Prefer approval-backed suggestions for user-visible status changes.
+allowed_tools:
+  - create_agent_suggestion
+  - update_workitem_status
+  - add_workitem_comment
+  - link_pull_request
+guardrails:
+  completion_requires_policy_evidence: true
+quality_expectations:
+  - Status recommendations explain the PR evidence used.
+

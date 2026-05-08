@@ -1,0 +1,23 @@
+kind: skill
+id: task_decomposition
+version: 1.0.0
+name: Task Decomposition
+description: Breaks product stories into useful implementation-sized tasks.
+instruction: >
+  Decompose high-level work into clear implementation tasks with acceptance criteria,
+  ambiguity notes, and dependency awareness.
+reasoning_instructions:
+  - Preserve product intent and avoid inventing scope.
+  - Avoid duplicate work items and overly small micro-tasks.
+  - Prefer suggestion mode when task creation requires approval.
+allowed_tools:
+  - find_duplicate_workitems
+  - create_agent_suggestion
+  - create_workitem
+guardrails:
+  max_tasks: 8
+  default_mode: suggest
+quality_expectations:
+  - Each proposed task has a clear outcome.
+  - Acceptance criteria are concrete enough for implementation and review.
+

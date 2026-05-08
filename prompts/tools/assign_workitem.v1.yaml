@@ -1,0 +1,15 @@
+kind: tool
+id: assign_workitem
+version: 1.0.0
+name: Assign Work Item
+description: Assigns a work item to a workspace member.
+usage:
+  - Use only when assignment is explicitly requested or policy-selected.
+do_not_use:
+  - Do not use to infer ownership without evidence.
+risk_level: medium
+approval_policy: user_approval_required
+input_contract:
+  workitem_id: string
+  assignee_id: string
+
