@@ -1,0 +1,23 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-format
+        name: ruff format
+        entry: ruff format --no-cache
+        language: python
+        additional_dependencies: ["ruff>=0.8"]
+        types_or: [python, pyi]
+
+      - id: ruff-check
+        name: ruff check
+        entry: ruff check --no-cache --fix --exit-non-zero-on-fix
+        language: python
+        additional_dependencies: ["ruff>=0.8"]
+        types_or: [python, pyi]
+
+      - id: python-compileall
+        name: python compileall
+        entry: python -m compileall -q src tests
+        language: python
+        pass_filenames: false
+        types_or: [python, pyi]
