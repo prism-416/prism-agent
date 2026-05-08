@@ -1,0 +1,18 @@
+{
+  "kind": "manual",
+  "event_type": "decompose_story",
+  "workspace_id": "workspace-local",
+  "project_id": "project-local",
+  "actor_id": "user-1",
+  "payload": {
+    "story": {
+      "id": "story-1",
+      "title": "Invite teammates to a Prism workspace",
+      "version": 1
+    },
+    "entity_versions": {
+      "story:story-1": 1
+    }
+  }
+}
+

@@ -1,0 +1,23 @@
+{
+  "kind": "domain",
+  "event_type": "pr.merged",
+  "workspace_id": "workspace-local",
+  "project_id": "project-local",
+  "payload": {
+    "pull_request": {
+      "id": "pr-42",
+      "merged": true,
+      "version": 5
+    },
+    "workitem": {
+      "id": "workitem-9",
+      "status": "in_review",
+      "version": 2
+    },
+    "entity_versions": {
+      "pull_request:pr-42": 5,
+      "workitem:workitem-9": 2
+    }
+  }
+}
+

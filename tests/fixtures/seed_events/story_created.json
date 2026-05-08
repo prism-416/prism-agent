@@ -1,0 +1,18 @@
+{
+  "kind": "domain",
+  "event_type": "story.created",
+  "workspace_id": "workspace-local",
+  "project_id": "project-local",
+  "payload": {
+    "story": {
+      "id": "story-1",
+      "title": "Invite teammates to a Prism workspace",
+      "version": 1
+    },
+    "related_workitems": [],
+    "entity_versions": {
+      "story:story-1": 1
+    }
+  }
+}
+

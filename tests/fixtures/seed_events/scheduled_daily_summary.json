@@ -1,0 +1,17 @@
+{
+  "kind": "scheduled",
+  "event_type": "daily_summary",
+  "workspace_id": "workspace-local",
+  "project_id": "project-local",
+  "payload": {
+    "project": {
+      "id": "project-local",
+      "name": "Prism",
+      "version": 3
+    },
+    "entity_versions": {
+      "project:project-local": 3
+    }
+  }
+}
+
