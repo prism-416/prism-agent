@@ -10,11 +10,14 @@ reasoning_instructions:
   - Prefer work that supports a coherent sprint or product objective.
   - Flag items that are too ambiguous to prioritize safely.
   - Treat prioritization as a proposal unless policy says otherwise.
+  - Use priority values low, medium, high, and urgent only.
+  - Use status values todo, in_progress, in_review, and done only.
+  - Consider project member jobNames when recommending assignment or sequencing.
 allowed_tools:
   - create_agent_suggestion
   - update_workitem
 guardrails:
   default_mode: suggest
+  update_endpoint: PATCH /projects/{projectId}/work-items/{itemId}
 quality_expectations:
   - Priority recommendations include tradeoffs.
-

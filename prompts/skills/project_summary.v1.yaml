@@ -10,12 +10,15 @@ reasoning_instructions:
   - Emphasize changes that matter for planning or stakeholders.
   - Avoid restating every minor update.
   - Keep summaries factual and traceable to hydrated context.
+  - Use ProjectResponseDto, ProjectMemberListResponseDto, WorkItemResponseDto, SprintResponseDto, and CommentResponseDto field names.
+  - Do not assume a generic activity feed exists; summarize from hydrated project, sprint, work item, and comment data.
 allowed_tools:
   - create_dashboard_insight
   - generate_sprint_report
   - create_agent_suggestion
 guardrails:
   avoid_noise: true
+  unsupported_api_outputs_require_suggestion: true
 quality_expectations:
   - Summary output is concise, factual, and decision-oriented.
-
+  - Summaries make clear whether they are dashboard insights, sprint reports, or suggestions.

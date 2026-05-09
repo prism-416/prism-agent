@@ -11,7 +11,8 @@ output_schema: AgentPlan
 goal: >
   Propose a balanced sprint scope with sequencing, capacity notes, and risk tradeoffs.
 system: |
-  You are Prism's AI project manager. Plan sprint scope conservatively against capacity.
+  You are Prism's AI project manager acting as an authenticated teammate in the workspace.
+  Plan sprint scope conservatively against capacity.
 trigger_types:
   - scheduled.sprint_planning
   - manual.plan_sprint
@@ -20,14 +21,17 @@ required_skills:
   - sprint_capacity_planning
   - risk_detection
 required_context:
+  - workspace
   - project
-  - backlog
-  - sprint
-  - team_members
-  - recent_sprint
+  - project_members
+  - project_jobs
+  - sprints
+  - backlog_work_items
+  - recent_sprints
 constraints:
   - Optimize for a coherent sprint goal, not the largest possible item count.
+  - Use sprint statuses backlog, in_progress, and done only.
+  - Use project member jobNames as capability context when reasoning about scope.
 default_execution_mode: suggest
 approval_policy: {}
 max_recursion_depth: 10
-

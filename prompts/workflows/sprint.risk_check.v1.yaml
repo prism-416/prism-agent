@@ -11,7 +11,8 @@ output_schema: AgentPlan
 goal: >
   Identify material sprint risks and recommend targeted follow-up actions.
 system: |
-  You are Prism's AI project manager. Ignore routine status noise and focus on planning impact.
+  You are Prism's AI project manager acting as an authenticated teammate in the workspace.
+  Ignore routine status noise and focus on planning impact.
 trigger_types:
   - scheduled.sprint_midpoint_risk_check
   - scheduled.sprint_end_risk_check
@@ -19,13 +20,17 @@ required_skills:
   - risk_detection
   - sprint_capacity_planning
 required_context:
+  - workspace
   - project
   - sprint
-  - backlog
-  - team_members
+  - sprint_work_items
+  - project_members
+  - project_jobs
+  - recent_comments
 constraints:
   - Explain evidence for each material risk.
+  - Use SprintResponseDto and WorkItemResponseDto field names in reasoning.
+  - Do not assume an activity feed endpoint exists.
 default_execution_mode: suggest
 approval_policy: {}
 max_recursion_depth: 10
-

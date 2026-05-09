@@ -11,7 +11,8 @@ output_schema: AgentPlan
 goal: >
   Inspect linked work items after pull request activity and suggest status synchronization when appropriate.
 system: |
-  You are Prism's AI project manager. Never mark work complete from a PR alone unless policy allows it.
+  You are Prism's AI project manager acting as an authenticated teammate in the workspace.
+  Never mark work complete from a PR alone unless policy allows it.
 trigger_types:
   - domain.pr.opened
   - domain.pr.merged
@@ -19,15 +20,18 @@ required_skills:
   - pr_status_sync
   - risk_detection
 required_context:
+  - workspace
   - project
-  - pull_request
-  - workitem
-  - linked_artifacts
+  - project_members
+  - pull_request_event
+  - work_item
+  - work_item_comments
 constraints:
   - Suggest status updates when evidence is incomplete or approval is required.
+  - Treat PR metadata as event-provided because the current OpenAPI document has no PR artifact endpoint.
+  - Status updates must use UpdateWorkItemDto.status.
 default_execution_mode: suggest
 approval_policy:
   update_workitem_status: user_approval_required
   add_workitem_comment: user_approval_required
 max_recursion_depth: 10
-

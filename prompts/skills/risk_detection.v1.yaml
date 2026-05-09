@@ -10,11 +10,15 @@ reasoning_instructions:
   - Ignore low-value noise and routine activity.
   - Mark stale context and missing evidence explicitly.
   - Prefer suggestions when confidence is insufficient.
+  - Use statusChangedAt and current status when assessing work item flow risk.
+  - Use sprint status backlog, in_progress, and done when assessing sprint risk.
+  - Use comments as teammate-visible evidence only when a workflow explicitly selects comment tooling.
 allowed_tools:
   - create_agent_suggestion
   - create_dashboard_insight
 guardrails:
   evidence_required: true
+  avoid_api_unsupported_claims: true
 quality_expectations:
   - Risks are actionable and tied to project state.
-
+  - Risk output names the API resource that supports the observation.

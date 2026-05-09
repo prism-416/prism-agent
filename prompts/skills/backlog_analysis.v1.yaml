@@ -10,12 +10,16 @@ reasoning_instructions:
   - Separate evidence from assumption.
   - Identify duplicate and overlapping work before proposing new items.
   - Avoid churn from minor field changes.
+  - Use WorkItemResponseDto fields itemId, parentId, type, priority, status, assigneeUsernames, and labelNames.
+  - Use GET /projects/{projectId}/work-items filters instead of assuming a separate backlog endpoint.
+  - Treat epic, story, and task as the only valid work item types.
 allowed_tools:
   - find_duplicate_workitems
   - create_agent_suggestion
   - update_workitem
 guardrails:
   mutation_mode: approval_required
+  search_limit_max: 100
 quality_expectations:
   - Recommendations explain why backlog quality would improve.
-
+  - Proposed changes only use UpdateWorkItemDto fields.

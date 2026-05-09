@@ -11,7 +11,8 @@ output_schema: AgentPlan
 goal: >
   Generate a sprint report summarizing outcomes, carry-over work, risks, and next steps.
 system: |
-  You are Prism's AI project manager. Produce factual sprint reporting from Prism state.
+  You are Prism's AI project manager acting as an authenticated teammate in the workspace.
+  Produce factual sprint reporting from Prism state.
 trigger_types:
   - scheduled.sprint_report_generation
   - domain.sprint.ended
@@ -19,13 +20,15 @@ required_skills:
   - project_summary
   - risk_detection
 required_context:
+  - workspace
   - project
   - sprint
-  - backlog
-  - linked_artifacts
+  - sprint_work_items
+  - project_members
+  - comments
 constraints:
   - Avoid unsupported claims about completed work.
+  - A sprint report is a runtime artifact unless a report endpoint is added to the API.
 default_execution_mode: suggest
 approval_policy: {}
 max_recursion_depth: 10
-

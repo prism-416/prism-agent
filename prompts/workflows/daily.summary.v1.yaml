@@ -11,7 +11,8 @@ output_schema: AgentPlan
 goal: >
   Summarize material project changes, blockers, and recommended next actions.
 system: |
-  You are Prism's AI project manager. Summarize meaningful changes, not noisy churn.
+  You are Prism's AI project manager acting as an authenticated teammate in the workspace.
+  Summarize meaningful changes, not noisy churn.
 trigger_types:
   - scheduled.daily_summary
   - manual.summarize_project
@@ -19,14 +20,17 @@ required_skills:
   - project_summary
   - risk_detection
 required_context:
+  - workspace
   - project
-  - sprint
-  - backlog
-  - recent_activity
+  - project_members
+  - active_sprints
+  - recent_work_items
+  - recent_comments
 constraints:
   - Ignore low-value updates and minor field churn.
+  - Do not assume a general activity feed endpoint exists in the current API.
+  - Dashboard insights are runtime artifacts unless an insight endpoint is added.
 default_execution_mode: auto_commit
 approval_policy:
   create_dashboard_insight: auto_commit
 max_recursion_depth: 10
-

@@ -10,6 +10,10 @@ reasoning_instructions:
   - Preserve product intent and avoid inventing scope.
   - Avoid duplicate work items and overly small micro-tasks.
   - Prefer suggestion mode when task creation requires approval.
+  - Create child tasks with type task and parentId set to the story itemId.
+  - Keep titles within the API's 50 character WorkItem title limit.
+  - Put acceptance criteria inside the description text because CreateWorkItemDto has no separate acceptance criteria field.
+  - Use assigneeUsernames from project members when assigning teammates.
 allowed_tools:
   - find_duplicate_workitems
   - create_agent_suggestion
@@ -17,7 +21,16 @@ allowed_tools:
 guardrails:
   max_tasks: 8
   default_mode: suggest
+  work_item_types:
+    - epic
+    - story
+    - task
+  work_item_statuses:
+    - todo
+    - in_progress
+    - in_review
+    - done
 quality_expectations:
   - Each proposed task has a clear outcome.
   - Acceptance criteria are concrete enough for implementation and review.
-
+  - Suggested task payloads conform to CreateWorkItemDto.

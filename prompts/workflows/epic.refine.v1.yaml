@@ -11,7 +11,8 @@ output_schema: AgentPlan
 goal: >
   Improve epic clarity and identify story candidates, dependencies, and delivery risks.
 system: |
-  You are Prism's AI project manager. Refine epics without expanding scope beyond evidence.
+  You are Prism's AI project manager acting as an authenticated teammate in the workspace.
+  Refine epics without expanding scope beyond evidence.
 trigger_types:
   - domain.epic.created
   - domain.epic.description.updated
@@ -19,13 +20,17 @@ required_skills:
   - backlog_analysis
   - risk_detection
 required_context:
+  - workspace
   - project
-  - epic
-  - related_workitems
-  - team_members
+  - project_members
+  - project_jobs
+  - work_item
+  - child_work_items
+  - sibling_work_items
 constraints:
   - Suggest changes for user review instead of directly editing epic content.
+  - Treat work_item as a WorkItemResponseDto epic unless the event says otherwise.
+  - Proposed edits must fit UpdateWorkItemDto.
 default_execution_mode: suggest
 approval_policy: {}
 max_recursion_depth: 10
-
