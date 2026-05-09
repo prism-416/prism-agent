@@ -99,7 +99,7 @@ class RuntimePlanningAgent:
         specs: list[dict[str, Any]] = []
 
         if "find_duplicate_workitems" in tool_names:
-            story = context.entities.get("story", {})
+            work_item = context.entities.get("work_item") or context.entities.get("story", {})
             specs.append(
                 {
                     "action_type": "analysis",
@@ -107,7 +107,10 @@ class RuntimePlanningAgent:
                     "instruction": (
                         "Check whether the target work item duplicates existing backlog work."
                     ),
-                    "input": {"title": story.get("title", context.source_event.event_type)},
+                    "input": {
+                        "projectId": context.project_id,
+                        "title": work_item.get("title", context.source_event.event_type),
+                    },
                 }
             )
 
