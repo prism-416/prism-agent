@@ -4,12 +4,22 @@ version: 1.0.0
 name: Add Work Item Comment
 description: Adds a comment to a work item with agent-generated context.
 usage:
-  - Use to attach PR or risk evidence to a work item when approved.
+  - Use to collaborate as the authenticated Prism teammate on a specific work item.
+  - Creates through POST /projects/{projectId}/work-items/{itemId}/comments using CreateCommentDto.
+  - Keep comments concise and evidence-backed.
 do_not_use:
   - Do not use for noisy status repetition.
 risk_level: medium
 approval_policy: user_approval_required
+api:
+  method: POST
+  path: /projects/{projectId}/work-items/{itemId}/comments
+  request_schema: CreateCommentDto
+  response_schema: CommentResponseDto
+  response_wrapper: data
 input_contract:
-  workitem_id: string
+  projectId: string
+  itemId: string
   comment: string
-
+constraints:
+  body_max_length: 2000

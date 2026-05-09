@@ -4,15 +4,32 @@ version: 1.0.0
 name: Create Work Item
 description: Creates a Prism work item after validation and approval policy permit it.
 usage:
-  - Use only when a selected skill allows work item creation.
-  - Use only with fresh expected entity versions.
+  - Use only when a selected skill allows work item creation and the caller has project access.
+  - Creates through POST /projects/{projectId}/work-items using CreateWorkItemDto.
+  - Put acceptance criteria inside description because the API has no separate acceptanceCriteria field.
+  - Use usernames, not user IDs, for assigneeUsernames.
 do_not_use:
   - Do not use when approval is required and has not been granted.
   - Do not use when a similar work item already exists.
+  - Do not send fields outside CreateWorkItemDto.
 risk_level: high
 approval_policy: user_approval_required
+api:
+  method: POST
+  path: /projects/{projectId}/work-items
+  request_schema: CreateWorkItemDto
+  response_schema: WorkItemResponseDto
+  response_wrapper: data
 input_contract:
+  projectId: string
+  parentId: optional uuid
   title: string
   description: string
-  acceptance_criteria: list
-
+  type: epic | story | task
+  priority: optional low | medium | high | urgent
+  assigneeUsernames: optional unique username list
+  labelNames: optional unique label list
+constraints:
+  title_max_length: 50
+  assignee_username_max_length: 30
+  label_name_max_length: 20
