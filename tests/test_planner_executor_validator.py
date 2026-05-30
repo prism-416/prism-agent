@@ -37,7 +37,7 @@ def test_planner_outputs_agent_plan_schema(prompts_path) -> None:
         prompt_registry,
         SkillRegistry.from_prompt_registry(prompt_registry),
         ToolRegistry.from_prompt_registry(prompt_registry),
-        PydanticAIAgentFactory(GeminiModelProvider(Settings(prompts_path=str(prompts_path)))),
+        PydanticAIAgentFactory(GeminiModelProvider(Settings())),
     )
 
     plan = planner.create_plan(snapshot.context, snapshot.ref, workflow)
@@ -62,9 +62,9 @@ def test_agent_factory_composes_workflow_skill_and_tool_prompts(prompts_path) ->
     tool_registry = ToolRegistry.from_prompt_registry(prompt_registry)
     skills = skill_registry.select(["task_decomposition"])
     tools = tool_registry.select(skill_registry.allowed_tools_for(["task_decomposition"]))
-    agent = PydanticAIAgentFactory(
-        GeminiModelProvider(Settings(prompts_path=str(prompts_path)))
-    ).create_agent(workflow_prompt, skills, tools)
+    agent = PydanticAIAgentFactory(GeminiModelProvider(Settings())).create_agent(
+        workflow_prompt, skills, tools
+    )
 
     compiled = agent.compile_system_prompt()
 
@@ -178,7 +178,7 @@ def test_validator_detects_stale_context() -> None:
         payload={"entity_versions": {"story:s1": 1}},
     )
     context = (
-        ContextProvider(PrismApiClient(), PromptRegistry("prompts"))
+        ContextProvider(PrismApiClient(), PromptRegistry())
         .hydrate(
             EventEnvelope.wrap(event),
             WorkflowRegistry.with_defaults().get("story.decompose"),

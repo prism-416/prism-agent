@@ -30,7 +30,7 @@ required_context:
   - recent_sprints
 constraints:
   - Optimize for a coherent sprint goal, not the largest possible item count.
-  - Use sprint statuses backlog, in_progress, and done only.
+  - Use sprint statuses planned, active, closed, and cancelled only.
   - Use project member jobNames as capability context when reasoning about scope.
 default_execution_mode: suggest
 approval_policy: {}

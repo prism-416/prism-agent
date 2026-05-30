@@ -1,0 +1,33 @@
+kind: skill
+id: feature_provisioning
+version: 1.0.0
+name: Feature Provisioning
+description: Converts a requested feature specification into a sprint and implementation tasks.
+instruction: >
+  Turn a hydrated feature provisioning payload into a concise sprint goal and
+  implementation work items that match the Prism API contracts.
+reasoning_instructions:
+  - Treat the OCI queue message as pointer metadata only; use the Object Storage payload as the source of truth.
+  - Create the sprint through the workspace-scoped sprint API.
+  - Create work items through the project-scoped work item API.
+  - Assign teammates by setting assigneeUsernames on create_workitem or update_workitem payloads.
+  - Do not attempt to attach work items to a sprint until a sprint-work-item mapping API exists.
+  - Keep work item titles within the API's 100 character title limit.
+  - Put acceptance criteria inside description because CreateWorkItemDto has no separate acceptance criteria field.
+allowed_tools:
+  - create_sprint
+  - create_workitem
+  - update_workitem
+guardrails:
+  max_work_items: 12
+  default_sprint_status: planned
+  work_item_statuses:
+    - todo
+    - in_progress
+    - in_review
+    - done
+    - archived
+quality_expectations:
+  - The sprint has a clear goal derived from featureSpecification.
+  - Each generated work item has an implementation outcome and reviewable acceptance criteria.
+  - Work item payloads conform to CreateWorkItemDto or UpdateWorkItemDto.

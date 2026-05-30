@@ -22,6 +22,7 @@ def test_prompt_registry_loads_versioned_yaml(prompts_path) -> None:
 def test_tool_registry_loads_default_tools() -> None:
     registry = ToolRegistry.with_defaults()
 
+    assert "create_sprint" in registry.names()
     assert "create_workitem" in registry.names()
     assert registry.get("create_agent_suggestion").name == "create_agent_suggestion"
     assert registry.definition("create_workitem").risk_level == "high"
@@ -31,6 +32,7 @@ def test_tool_registry_loads_default_tools() -> None:
 def test_skill_registry_loads_default_skills() -> None:
     registry = SkillRegistry.with_defaults()
 
+    assert "feature_provisioning" in registry.ids()
     assert "task_decomposition" in registry.ids()
     assert registry.get("risk_detection").render_instruction()
     assert "create_workitem" in registry.allowed_tools_for(["task_decomposition"])
@@ -49,6 +51,15 @@ def test_workflow_registry_maps_trigger_to_prompt() -> None:
         "backlog_analysis",
         "risk_detection",
     ]
+
+
+def test_workflow_registry_maps_feature_provisioning_trigger() -> None:
+    registry = WorkflowRegistry.with_defaults()
+    workflow = registry.get_by_trigger("domain.feature.provisioning.requested")
+
+    assert workflow is not None
+    assert workflow.workflow_id == "feature.provision"
+    assert workflow.required_skills == ["feature_provisioning"]
 
 
 def test_skills_are_instantiated_from_yaml_without_inline_skill_modules() -> None:

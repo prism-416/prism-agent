@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
 from typing import Any
+from urllib.error import HTTPError
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 
 from domain.events import BaseRuntimeEvent
 
@@ -13,9 +17,13 @@ class PrismApiClient:
     """
 
     def __init__(self, base_url: str | None = None, token: str | None = None) -> None:
-        self.base_url = base_url
+        self.base_url = base_url.rstrip("/") if base_url else None
         self.token = token
         self._versions: dict[str, str | int] = {}
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.base_url)
 
     def fetch_context_entities(
         self,
@@ -71,6 +79,67 @@ class PrismApiClient:
 
     def set_entity_version(self, entity_ref: str, version: str | int) -> None:
         self._versions[entity_ref] = version
+
+    def create_sprint(self, workspace_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request_json(
+            "POST",
+            f"/workspaces/{quote(workspace_id, safe='')}/sprints",
+            payload,
+        )
+
+    def create_work_item(self, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request_json(
+            "POST",
+            f"/projects/{quote(project_id, safe='')}/work-items",
+            payload,
+        )
+
+    def update_work_item(
+        self,
+        project_id: str,
+        item_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        return self._request_json(
+            "PATCH",
+            f"/projects/{quote(project_id, safe='')}/work-items/{quote(item_id, safe='')}",
+            payload,
+        )
+
+    def _request_json(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        if not self.base_url:
+            raise RuntimeError("PRISM_API_BASE_URL is required for live Prism API calls.")
+        data = None if payload is None else json.dumps(payload).encode("utf-8")
+        headers = {"Accept": "application/json"}
+        if payload is not None:
+            headers["Content-Type"] = "application/json"
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        request = Request(
+            f"{self.base_url}{path}",
+            data=data,
+            headers=headers,
+            method=method,
+        )
+        try:
+            with urlopen(request, timeout=30) as response:
+                raw = response.read().decode("utf-8")
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"Prism API {method} {path} failed: {exc.code} {detail}") from exc
+        if not raw:
+            return {}
+        decoded = json.loads(raw)
+        if isinstance(decoded, dict) and isinstance(decoded.get("data"), dict):
+            return decoded["data"]
+        if isinstance(decoded, dict):
+            return decoded
+        raise RuntimeError(f"Prism API {method} {path} returned non-object JSON.")
 
     @staticmethod
     def _default_entity(context_key: str, event: BaseRuntimeEvent) -> dict[str, Any]:

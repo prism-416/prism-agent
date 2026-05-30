@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 from capabilities.definitions import WorkflowPromptDefinition
@@ -77,6 +78,7 @@ class RuntimePlanningAgent:
         action_specs = self._deterministic_action_specs(context)
         actions: list[PlannedAction] = []
         previous_action_id: str | None = None
+        idempotency_prefix = context.source_event.event.idempotency_key or plan.plan_id
         for spec in action_specs:
             tool_name = spec["tool_name"]
             action = PlannedAction(
@@ -87,7 +89,7 @@ class RuntimePlanningAgent:
                 input=spec["input"],
                 depends_on=[previous_action_id] if previous_action_id else [],
                 requires_approval=approval_policy.requires_approval(tool_name),
-                idempotency_key=f"{plan.plan_id}:{tool_name}:{len(actions) + 1}",
+                idempotency_key=f"{idempotency_prefix}:{tool_name}:{len(actions) + 1}",
                 expected_entity_versions=context.entity_versions,
             )
             actions.append(action)
@@ -96,6 +98,9 @@ class RuntimePlanningAgent:
 
     def _deterministic_action_specs(self, context: AgentContext) -> list[dict[str, Any]]:
         tool_names = [tool.name for tool in self.tools]
+        if context.source_event.event_type == "feature.provisioning.requested":
+            return self._feature_provisioning_action_specs(context, tool_names)
+
         specs: list[dict[str, Any]] = []
 
         if "find_duplicate_workitems" in tool_names:
@@ -163,6 +168,78 @@ class RuntimePlanningAgent:
             )
 
         return specs
+
+    def _feature_provisioning_action_specs(
+        self,
+        context: AgentContext,
+        tool_names: list[str],
+    ) -> list[dict[str, Any]]:
+        payload = context.source_event.event.payload
+        feature_specification = self._feature_specification_text(payload)
+        starts_at = context.source_event.event.occurred_at.replace(microsecond=0)
+        ends_at = starts_at + timedelta(days=14)
+        sprint_name = self._title_from_feature_specification(feature_specification, 50)
+        work_item_title = self._title_from_feature_specification(feature_specification, 100)
+        specs: list[dict[str, Any]] = []
+
+        if "create_sprint" in tool_names:
+            specs.append(
+                {
+                    "action_type": "mutation",
+                    "tool_name": "create_sprint",
+                    "instruction": "Create a planned sprint for the requested feature.",
+                    "input": {
+                        "workspaceId": context.workspace_id,
+                        "name": sprint_name,
+                        "goal": feature_specification[:1000],
+                        "startsAt": starts_at.isoformat().replace("+00:00", "Z"),
+                        "endsAt": ends_at.isoformat().replace("+00:00", "Z"),
+                        "status": "planned",
+                    },
+                }
+            )
+
+        if "create_workitem" in tool_names:
+            specs.append(
+                {
+                    "action_type": "mutation",
+                    "tool_name": "create_workitem",
+                    "instruction": "Create the top-level task for the requested feature.",
+                    "input": {
+                        "projectId": context.project_id,
+                        "title": work_item_title,
+                        "description": feature_specification,
+                        "priority": "medium",
+                        "status": "todo",
+                        "assigneeUsernames": self._assignee_usernames(payload),
+                        "labelNames": ["feature-provisioning"],
+                    },
+                }
+            )
+
+        return specs
+
+    @staticmethod
+    def _feature_specification_text(payload: dict[str, Any]) -> str:
+        value = payload.get("featureSpecification") or payload.get("feature_specification")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        return "Provision requested feature."
+
+    @staticmethod
+    def _title_from_feature_specification(feature_specification: str, max_length: int) -> str:
+        first_line = next(
+            (line.strip() for line in feature_specification.splitlines() if line.strip()),
+            "Feature provisioning",
+        )
+        return first_line[:max_length]
+
+    @staticmethod
+    def _assignee_usernames(payload: dict[str, Any]) -> list[str]:
+        explicit = payload.get("assigneeUsernames")
+        if isinstance(explicit, list):
+            return [str(username) for username in explicit if username]
+        return []
 
     def _render_instructions(self) -> str:
         return self.compile_system_prompt()

@@ -19,7 +19,7 @@ class SkillRegistry:
 
     @classmethod
     def with_defaults(cls) -> SkillRegistry:
-        return cls.from_prompt_registry(PromptRegistry("prompts"))
+        return cls.from_prompt_registry(PromptRegistry())
 
     def register(self, skill: RuntimeSkill) -> None:
         self._skills[skill.id] = skill
