@@ -20,6 +20,7 @@ ALLOWED_MANUAL_TRIGGERS = {
 ALLOWED_DOMAIN_TRIGGERS = {
     "epic.created",
     "epic.description.updated",
+    "feature.provisioning.requested",
     "story.created",
     "story.ready_for_breakdown",
     "sprint.started",
