@@ -12,10 +12,12 @@ from capabilities.definitions import (
     WorkflowPromptDefinition,
 )
 
+DEFAULT_PROMPTS_PATH = Path(__file__).resolve().parents[3] / "prompts"
+
 
 class PromptRegistry:
-    def __init__(self, prompts_path: str | Path) -> None:
-        self.prompts_path = Path(prompts_path)
+    def __init__(self, prompts_path: str | Path | None = None) -> None:
+        self.prompts_path = Path(prompts_path) if prompts_path is not None else DEFAULT_PROMPTS_PATH
         self._prompts: dict[tuple[str, str], PromptDefinition] = {}
         self._workflows: dict[tuple[str, str], WorkflowPromptDefinition] = {}
         self._skills: dict[tuple[str, str], SkillPromptDefinition] = {}

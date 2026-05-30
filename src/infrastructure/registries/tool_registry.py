@@ -4,7 +4,7 @@ from capabilities.definitions import ToolPromptDefinition
 from capabilities.tools.base import BaseAgentTool
 from capabilities.tools.dashboard_tools import CreateDashboardInsightTool
 from capabilities.tools.github_tools import LinkPullRequestTool
-from capabilities.tools.sprint_tools import GenerateSprintReportTool
+from capabilities.tools.sprint_tools import CreateSprintTool, GenerateSprintReportTool
 from capabilities.tools.suggestion_tools import CreateAgentSuggestionTool
 from capabilities.tools.workitem_tools import (
     AddWorkItemCommentTool,
@@ -14,6 +14,7 @@ from capabilities.tools.workitem_tools import (
     UpdateWorkItemStatusTool,
     UpdateWorkItemTool,
 )
+from infrastructure.prism_api.client import PrismApiClient
 from infrastructure.registries.prompt_registry import PromptRegistry
 
 
@@ -21,6 +22,7 @@ class ToolRegistry:
     TOOL_IMPLEMENTATIONS: dict[str, type[BaseAgentTool]] = {
         CreateAgentSuggestionTool.name: CreateAgentSuggestionTool,
         FindDuplicateWorkItemsTool.name: FindDuplicateWorkItemsTool,
+        CreateSprintTool.name: CreateSprintTool,
         CreateWorkItemTool.name: CreateWorkItemTool,
         UpdateWorkItemTool.name: UpdateWorkItemTool,
         AssignWorkItemTool.name: AssignWorkItemTool,
@@ -36,18 +38,22 @@ class ToolRegistry:
         self._definitions: dict[str, ToolPromptDefinition] = {}
 
     @classmethod
-    def from_prompt_registry(cls, prompt_registry: PromptRegistry) -> ToolRegistry:
+    def from_prompt_registry(
+        cls,
+        prompt_registry: PromptRegistry,
+        prism_client: PrismApiClient | None = None,
+    ) -> ToolRegistry:
         registry = cls()
         for definition in prompt_registry.list_tools():
             implementation = cls.TOOL_IMPLEMENTATIONS.get(definition.id)
             if implementation is None:
                 continue
-            registry.register(implementation(definition))
+            registry.register(implementation(definition, prism_client=prism_client))
         return registry
 
     @classmethod
     def with_defaults(cls) -> ToolRegistry:
-        return cls.from_prompt_registry(PromptRegistry("prompts"))
+        return cls.from_prompt_registry(PromptRegistry())
 
     def register(self, tool: BaseAgentTool) -> None:
         self._tools[tool.name] = tool

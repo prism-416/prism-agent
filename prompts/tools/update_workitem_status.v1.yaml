@@ -6,7 +6,7 @@ description: Updates work item status when completion policy and validation allo
 usage:
   - Use after PR status sync determines a status update is policy-supported.
   - Implement as PATCH /projects/{projectId}/work-items/{itemId} with UpdateWorkItemDto.status.
-  - Valid statuses are todo, in_progress, in_review, and done.
+  - Valid statuses are todo, in_progress, in_review, done, and archived.
 do_not_use:
   - Do not use from PR merge evidence alone unless policy permits it.
   - Do not use when the linked work item is stale.
@@ -21,4 +21,4 @@ api:
 input_contract:
   projectId: string
   itemId: string
-  status: todo | in_progress | in_review | done
+  status: todo | in_progress | in_review | done | archived

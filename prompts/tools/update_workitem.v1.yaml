@@ -25,12 +25,11 @@ input_contract:
   parentId: optional uuid or null
   title: optional string
   description: optional string
-  type: optional epic | story | task
   priority: optional low | medium | high | urgent
-  status: optional todo | in_progress | in_review | done
+  status: optional todo | in_progress | in_review | done | archived
   assigneeUsernames: optional unique username list
   labelNames: optional unique label list
 constraints:
-  title_max_length: 50
+  title_max_length: 100
   assignee_username_max_length: 30
-  label_name_max_length: 20
+  label_name_max_length: 30

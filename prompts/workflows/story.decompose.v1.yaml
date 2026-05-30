@@ -37,7 +37,7 @@ constraints:
   - Produce a structured AgentPlan before any action execution.
   - Prefer suggestions when ambiguity or approval requirements exist.
   - Treat work_item as a WorkItemResponseDto story unless the event says otherwise.
-  - Create implementation tasks as WorkItem type task with parentId set to the story itemId.
+  - Create implementation tasks with parentId set to the story itemId.
   - Use assigneeUsernames and labelNames rather than user IDs or label IDs.
 default_execution_mode: suggest
 approval_policy:

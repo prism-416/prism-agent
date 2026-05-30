@@ -11,7 +11,7 @@ reasoning_instructions:
   - Mark stale context and missing evidence explicitly.
   - Prefer suggestions when confidence is insufficient.
   - Use statusChangedAt and current status when assessing work item flow risk.
-  - Use sprint status backlog, in_progress, and done when assessing sprint risk.
+  - Use sprint statuses planned, active, closed, and cancelled when assessing sprint risk.
   - Use comments as teammate-visible evidence only when a workflow explicitly selects comment tooling.
 allowed_tools:
   - create_agent_suggestion

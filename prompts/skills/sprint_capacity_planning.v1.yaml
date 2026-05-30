@@ -10,8 +10,8 @@ reasoning_instructions:
   - Prefer a coherent sprint goal over maximizing ticket count.
   - Surface capacity assumptions.
   - Explain why proposed work fits or exceeds capacity.
-  - Use SprintResponseDto fields sprintId, startsAt, endsAt, status, and description.
-  - Use GET /projects/{projectId}/sprints/{sprintId}/work-items for sprint scope.
+  - Use SprintResponseDto fields sprintId, startsAt, endsAt, status, and goal.
+  - Use GET /workspaces/{workspaceId}/sprints/{sprintId}/work-items for sprint scope.
   - Treat project member jobNames as capability signals, not hard capacity numbers.
 allowed_tools:
   - create_agent_suggestion
@@ -19,9 +19,10 @@ allowed_tools:
 guardrails:
   default_mode: suggest
   sprint_statuses:
-    - backlog
-    - in_progress
-    - done
+    - planned
+    - active
+    - closed
+    - cancelled
 quality_expectations:
   - Sprint proposals include confidence and capacity notes.
   - Sprint plans reference concrete work item itemIds when available.
