@@ -3,13 +3,12 @@ from domain.events import DomainEvent, ManualInvocationEvent, ScheduledEvent
 from infrastructure.config.settings import Settings
 
 
-def test_local_recursion_processes_story_created(prompts_path) -> None:
+def test_local_recursion_processes_story_created() -> None:
     container = build_container(
         Settings(
             app_env="local",
             state_backend="memory",
             queue_backend="memory",
-            prompts_path=str(prompts_path),
             max_recursion_depth=10,
         )
     )
@@ -30,8 +29,8 @@ def test_local_recursion_processes_story_created(prompts_path) -> None:
     assert any(trace.event_name == "plan.completed" for trace in traces)
 
 
-def test_local_recursion_processes_daily_summary(prompts_path) -> None:
-    container = build_container(Settings(prompts_path=str(prompts_path)))
+def test_local_recursion_processes_daily_summary() -> None:
+    container = build_container(Settings())
     event = ScheduledEvent(event_type="daily_summary", workspace_id="w1", project_id="p1")
 
     traces = container.recursion_runner.run(event)
@@ -40,8 +39,8 @@ def test_local_recursion_processes_daily_summary(prompts_path) -> None:
     assert any(trace.event_name == "action.completed" for trace in traces)
 
 
-def test_local_recursion_processes_pr_merged(prompts_path) -> None:
-    container = build_container(Settings(prompts_path=str(prompts_path)))
+def test_local_recursion_processes_pr_merged() -> None:
+    container = build_container(Settings())
     event = DomainEvent(
         event_type="pr.merged",
         workspace_id="w1",
@@ -59,8 +58,8 @@ def test_local_recursion_processes_pr_merged(prompts_path) -> None:
     assert any(trace.event_name == "action.completed" for trace in traces)
 
 
-def test_local_recursion_processes_manual_decompose_story(prompts_path) -> None:
-    container = build_container(Settings(prompts_path=str(prompts_path)))
+def test_local_recursion_processes_manual_decompose_story() -> None:
+    container = build_container(Settings())
     event = ManualInvocationEvent(
         event_type="decompose_story",
         workspace_id="w1",

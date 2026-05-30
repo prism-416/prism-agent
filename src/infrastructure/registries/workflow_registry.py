@@ -37,7 +37,7 @@ class WorkflowRegistry:
 
     @classmethod
     def with_defaults(cls) -> WorkflowRegistry:
-        return cls.from_prompt_registry(PromptRegistry("prompts"))
+        return cls.from_prompt_registry(PromptRegistry())
 
     @staticmethod
     def _from_prompt(prompt: WorkflowPromptDefinition) -> WorkflowDefinition:
