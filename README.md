@@ -41,7 +41,8 @@ tests/
 The runtime is capability-driven: workflows select skills, skills whitelist tools,
 and tool prompt definitions describe LLM-facing usage while executable tool classes
 perform concrete actions. See [docs/capability_model.md](docs/capability_model.md)
-and [docs/directory_structure.md](docs/directory_structure.md).
+and [docs/directory_structure.md](docs/directory_structure.md). OCI Function deployment
+setup is documented in [docs/oci_function_deployment.md](docs/oci_function_deployment.md).
 
 Run local example:
 
