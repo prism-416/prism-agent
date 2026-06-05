@@ -1,0 +1,22 @@
+FROM fnproject/python:3.11-dev AS build-stage
+
+WORKDIR /function
+
+COPY pyproject.toml README.md ./
+COPY src ./src
+COPY prompts ./prompts
+COPY func.py ./
+
+RUN pip3 install --target /python --no-cache-dir ".[prod,function]" \
+    && rm -rf /tmp/* /root/.cache/pip
+
+FROM fnproject/python:3.11
+
+WORKDIR /function
+
+COPY --from=build-stage /function /function
+COPY --from=build-stage /python /python
+
+ENV PYTHONPATH=/function/src:/python
+
+ENTRYPOINT ["/python/bin/fdk", "/function/func.py", "handler"]

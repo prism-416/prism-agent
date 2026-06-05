@@ -98,7 +98,7 @@ def build_container(settings: Settings | None = None) -> AppContainer:
 def _build_queue(settings: Settings) -> Queue:
     if settings.queue_backend == "memory":
         return MemoryQueue()
-    return OCIQueue(settings.oci_queue_ocid)
+    return OCIQueue(settings.oci_queue_ocid, settings.oci_queue_messages_endpoint)
 
 
 def _build_state_store(settings: Settings) -> StateStore:
