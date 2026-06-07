@@ -25,6 +25,7 @@ from infrastructure.registries.workflow_registry import WorkflowRegistry
 from infrastructure.state.base import StateStore
 from infrastructure.state.memory_state_store import MemoryStateStore
 from infrastructure.state.object_storage_state_store import ObjectStorageStateStore
+from infrastructure.state.prism_api_state_store import PrismApiStateStore
 
 
 @dataclass
@@ -50,8 +51,8 @@ class AppContainer:
 def build_container(settings: Settings | None = None) -> AppContainer:
     settings = settings or Settings.from_env()
     queue = _build_queue(settings)
-    state_store = _build_state_store(settings)
     prism_client = PrismApiClient(settings.prism_api_base_url, settings.prism_api_token)
+    state_store = _build_state_store(settings, prism_client)
     prompt_registry = PromptRegistry()
     tool_registry = ToolRegistry.from_prompt_registry(prompt_registry, prism_client=prism_client)
     skill_registry = SkillRegistry.from_prompt_registry(prompt_registry)
@@ -101,7 +102,9 @@ def _build_queue(settings: Settings) -> Queue:
     return OCIQueue(settings.oci_queue_ocid, settings.oci_queue_messages_endpoint)
 
 
-def _build_state_store(settings: Settings) -> StateStore:
+def _build_state_store(settings: Settings, prism_client: PrismApiClient) -> StateStore:
     if settings.state_backend == "memory":
         return MemoryStateStore()
+    if settings.state_backend == "prism_api":
+        return PrismApiStateStore(prism_client)
     return ObjectStorageStateStore(settings.oci_namespace, settings.oci_bucket_name)

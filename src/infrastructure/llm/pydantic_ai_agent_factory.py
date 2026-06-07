@@ -35,7 +35,9 @@ class RuntimePlanningAgent:
         approval_policy: ActionApprovalPolicy,
     ) -> AgentPlan:
         if self.live_llm_enabled:
-            return self._generate_plan_with_pydantic_ai(context, context_snapshot_ref)
+            plan = self._generate_plan_with_pydantic_ai(context, context_snapshot_ref)
+            if plan.actions:
+                return plan
         return self._generate_deterministic_plan(context, context_snapshot_ref, approval_policy)
 
     def _generate_plan_with_pydantic_ai(
@@ -180,40 +182,46 @@ class RuntimePlanningAgent:
         ends_at = starts_at + timedelta(days=14)
         sprint_name = self._title_from_feature_specification(feature_specification, 50)
         work_item_title = self._title_from_feature_specification(feature_specification, 100)
+        requested_by_user_id = self._requested_by_user_id(payload)
         specs: list[dict[str, Any]] = []
 
         if "create_sprint" in tool_names:
+            sprint_input = {
+                "workspaceId": context.workspace_id,
+                "name": sprint_name,
+                "goal": feature_specification[:1000],
+                "startsAt": starts_at.isoformat().replace("+00:00", "Z"),
+                "endsAt": ends_at.isoformat().replace("+00:00", "Z"),
+            }
+            if requested_by_user_id:
+                sprint_input["requestedByUserId"] = requested_by_user_id
             specs.append(
                 {
                     "action_type": "mutation",
                     "tool_name": "create_sprint",
                     "instruction": "Create a planned sprint for the requested feature.",
-                    "input": {
-                        "workspaceId": context.workspace_id,
-                        "name": sprint_name,
-                        "goal": feature_specification[:1000],
-                        "startsAt": starts_at.isoformat().replace("+00:00", "Z"),
-                        "endsAt": ends_at.isoformat().replace("+00:00", "Z"),
-                        "status": "planned",
-                    },
+                    "input": sprint_input,
                 }
             )
 
         if "create_workitem" in tool_names:
+            work_item_input = {
+                "projectId": context.project_id,
+                "title": work_item_title,
+                "description": feature_specification,
+                "priority": "medium",
+                "status": "todo",
+                "assigneeUsernames": self._assignee_usernames(payload),
+                "labelNames": ["feature-provisioning"],
+            }
+            if requested_by_user_id:
+                work_item_input["requestedByUserId"] = requested_by_user_id
             specs.append(
                 {
                     "action_type": "mutation",
                     "tool_name": "create_workitem",
                     "instruction": "Create the top-level task for the requested feature.",
-                    "input": {
-                        "projectId": context.project_id,
-                        "title": work_item_title,
-                        "description": feature_specification,
-                        "priority": "medium",
-                        "status": "todo",
-                        "assigneeUsernames": self._assignee_usernames(payload),
-                        "labelNames": ["feature-provisioning"],
-                    },
+                    "input": work_item_input,
                 }
             )
 
@@ -240,6 +248,16 @@ class RuntimePlanningAgent:
         if isinstance(explicit, list):
             return [str(username) for username in explicit if username]
         return []
+
+    @staticmethod
+    def _requested_by_user_id(payload: dict[str, Any]) -> str | None:
+        explicit = payload.get("requestedByUserId")
+        if explicit:
+            return str(explicit)
+        queue_pointer = payload.get("queue_pointer", {})
+        if isinstance(queue_pointer, dict) and queue_pointer.get("requestedByUserId"):
+            return str(queue_pointer["requestedByUserId"])
+        return None
 
     def _render_instructions(self) -> str:
         return self.compile_system_prompt()

@@ -25,10 +25,11 @@ required_context:
 constraints:
   - The queue message is a pointer event; never treat it as the source feature payload.
   - Validate hydrated payload identity before planning.
-  - Use POST /workspaces/{workspaceId}/sprints for sprint creation.
-  - Use POST /projects/{projectId}/work-items for task creation.
+  - Use POST /workspaces/{workspaceId}/sprints/internal for sprint creation.
+  - Use POST /projects/{projectId}/work-items/internal for task creation.
+  - Include requestedByUserId from the queue pointer for internal mutation DTOs.
   - Use assigneeUsernames on work item create/update payloads for assignment.
-  - Do not map generated work items into a sprint because the API does not expose a sprint-work-item mapping endpoint yet.
+  - Do not map generated work items into a sprint unless a selected tool explicitly supports sprint work item mapping.
 default_execution_mode: auto_commit
 approval_policy:
   create_sprint: auto_commit

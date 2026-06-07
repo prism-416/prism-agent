@@ -11,16 +11,15 @@ reasoning_instructions:
   - Create the sprint through the workspace-scoped sprint API.
   - Create work items through the project-scoped work item API.
   - Assign teammates by setting assigneeUsernames on create_workitem or update_workitem payloads.
-  - Do not attempt to attach work items to a sprint until a sprint-work-item mapping API exists.
+  - Do not attach work items to a sprint unless a selected tool explicitly supports sprint work item mapping.
   - Keep work item titles within the API's 100 character title limit.
-  - Put acceptance criteria inside description because CreateWorkItemDto has no separate acceptance criteria field.
+  - Put acceptance criteria inside description because CreateWorkItemForInternalDto has no separate acceptance criteria field.
 allowed_tools:
   - create_sprint
   - create_workitem
   - update_workitem
 guardrails:
   max_work_items: 12
-  default_sprint_status: planned
   work_item_statuses:
     - todo
     - in_progress
@@ -30,4 +29,4 @@ guardrails:
 quality_expectations:
   - The sprint has a clear goal derived from featureSpecification.
   - Each generated work item has an implementation outcome and reviewable acceptance criteria.
-  - Work item payloads conform to CreateWorkItemDto or UpdateWorkItemDto.
+  - Work item payloads conform to CreateWorkItemForInternalDto or UpdateWorkItemForInternalDto.

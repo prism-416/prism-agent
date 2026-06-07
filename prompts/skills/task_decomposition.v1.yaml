@@ -12,7 +12,7 @@ reasoning_instructions:
   - Prefer suggestion mode when task creation requires approval.
   - Create child tasks with parentId set to the story itemId.
   - Keep titles within the API's 100 character WorkItem title limit.
-  - Put acceptance criteria inside the description text because CreateWorkItemDto has no separate acceptance criteria field.
+  - Put acceptance criteria inside the description text because CreateWorkItemForInternalDto has no separate acceptance criteria field.
   - Use assigneeUsernames from project members when assigning teammates.
 allowed_tools:
   - find_duplicate_workitems
@@ -30,4 +30,4 @@ guardrails:
 quality_expectations:
   - Each proposed task has a clear outcome.
   - Acceptance criteria are concrete enough for implementation and review.
-  - Suggested task payloads conform to CreateWorkItemDto.
+  - Suggested task payloads conform to CreateWorkItemForInternalDto fields when executed as mutations.

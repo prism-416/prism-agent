@@ -12,7 +12,7 @@ class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     app_env: Literal["local", "prod"] = "local"
-    state_backend: Literal["memory", "object_storage"] = "memory"
+    state_backend: Literal["memory", "object_storage", "prism_api"] = "memory"
     queue_backend: Literal["memory", "oci"] = "memory"
     llm_provider: Literal["gemini"] = "gemini"
     gemini_api_key: str | None = None

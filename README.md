@@ -47,9 +47,9 @@ Known beta limitations and schedule adjustments:
 
 - `OCIQueue` is still an adapter skeleton; production queue enqueue/dequeue work is
   scheduled for final-release hardening.
-- Sprint work item mapping is pending a backend mutation endpoint. Feature
-  provisioning can create sprints and work items, but it cannot attach work items
-  to a sprint until the backend API adds that endpoint.
+- Sprint work item mapping is pending an agent tool. The backend API exposes
+  sprint work item mutation endpoints, but the runtime currently creates sprints
+  and work items without attaching generated work items to the sprint.
 - Agent suggestions, dashboard insights, sprint reports, PR linked artifacts, and
   optimistic concurrency metadata are documented API gaps. See
   [docs/api_alignment.md](docs/api_alignment.md).
@@ -247,13 +247,13 @@ Optional environment variables:
 | Variable | Use |
 | --- | --- |
 | `APP_ENV` | `local` or `prod`; live LLM planning only runs in `prod` with a Gemini key. |
-| `STATE_BACKEND` | `memory` or `object_storage`. |
+| `STATE_BACKEND` | `memory`, `prism_api`, or legacy `object_storage`. |
 | `QUEUE_BACKEND` | `memory` or `oci`. |
 | `GEMINI_API_KEY` | Gemini API key for production LLM planning. |
 | `DEFAULT_GEMINI_MODEL` | Default Gemini model; currently defaults to `gemini-2.5-pro`. |
 | `MAX_RECURSION_DEPTH` | Safety limit for recursive event processing. |
 | `PRISM_API_BASE_URL` | Base URL for live Prizmatic API calls. |
-| `PRISM_API_TOKEN` | Bearer token for live Prizmatic API calls. |
+| `PRISM_API_TOKEN` | Internal API token sent as `x-internal-api-token` for live Prizmatic API calls. |
 | `OCI_QUEUE_OCID` | Required when `QUEUE_BACKEND=oci`. |
 | `OCI_NAMESPACE` | Required for OCI object storage state. |
 | `OCI_BUCKET_NAME` | Required for OCI object storage state. |

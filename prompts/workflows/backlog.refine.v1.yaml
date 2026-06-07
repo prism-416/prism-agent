@@ -30,7 +30,7 @@ required_context:
 constraints:
   - Group suggestions into useful batches.
   - Use GET /projects/{projectId}/work-items filters as the backlog read model.
-  - Proposed mutations must fit UpdateWorkItemDto.
+  - Proposed mutations must fit UpdateWorkItemForInternalDto fields.
 default_execution_mode: suggest
 approval_policy: {}
 max_recursion_depth: 10

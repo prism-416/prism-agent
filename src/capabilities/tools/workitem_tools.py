@@ -60,6 +60,9 @@ class CreateWorkItemTool(BaseAgentTool):
             "description", str(action.input.get("description") or action.instruction)
         )
         if self.prism_client and self.prism_client.is_configured:
+            requested_by_user_id = _requested_by_user_id(action.input, context)
+            if requested_by_user_id:
+                payload.setdefault("requestedByUserId", requested_by_user_id)
             output = self.prism_client.create_work_item(project_id, payload)
         else:
             output = {
@@ -96,6 +99,9 @@ class UpdateWorkItemTool(BaseAgentTool):
             action.input.get("changes", action.input), UPDATE_WORK_ITEM_FIELDS
         )
         if self.prism_client and self.prism_client.is_configured:
+            requested_by_user_id = _requested_by_user_id(action.input, context)
+            if requested_by_user_id:
+                payload.setdefault("requestedByUserId", requested_by_user_id)
             output = self.prism_client.update_work_item(project_id, item_id, payload)
         else:
             output = {"itemId": item_id, "updated": True, **payload}
@@ -124,10 +130,14 @@ class AssignWorkItemTool(BaseAgentTool):
         project_id = str(action.input.get("projectId") or context.project_id or "")
         assignee_usernames = action.input.get("assigneeUsernames", [])
         if self.prism_client and self.prism_client.is_configured:
+            payload = {"assigneeUsernames": assignee_usernames}
+            requested_by_user_id = _requested_by_user_id(action.input, context)
+            if requested_by_user_id:
+                payload["requestedByUserId"] = requested_by_user_id
             output = self.prism_client.update_work_item(
                 project_id,
                 item_id,
-                {"assigneeUsernames": assignee_usernames},
+                payload,
             )
         else:
             output = {
@@ -154,7 +164,11 @@ class UpdateWorkItemStatusTool(BaseAgentTool):
         )
         status = str(action.input.get("status") or "done")
         if self.prism_client and self.prism_client.is_configured:
-            output = self.prism_client.update_work_item(project_id, item_id, {"status": status})
+            payload = {"status": status}
+            requested_by_user_id = _requested_by_user_id(action.input, context)
+            if requested_by_user_id:
+                payload["requestedByUserId"] = requested_by_user_id
+            output = self.prism_client.update_work_item(project_id, item_id, payload)
         else:
             output = {"itemId": item_id, "status": status}
         event = DomainEvent(
@@ -198,3 +212,13 @@ def _filter_payload(input_data: Any, allowed_fields: set[str]) -> dict[str, Any]
         for field, value in input_data.items()
         if field in allowed_fields and value is not None
     }
+
+
+def _requested_by_user_id(input_data: dict, context: AgentContext) -> str | None:
+    requested_by_user_id = input_data.get("requestedByUserId")
+    if requested_by_user_id:
+        return str(requested_by_user_id)
+    queue_pointer = context.source_event.event.payload.get("queue_pointer", {})
+    if isinstance(queue_pointer, dict) and queue_pointer.get("requestedByUserId"):
+        return str(queue_pointer["requestedByUserId"])
+    return None

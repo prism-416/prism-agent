@@ -18,6 +18,6 @@ allowed_tools:
   - update_workitem
 guardrails:
   default_mode: suggest
-  update_endpoint: PATCH /projects/{projectId}/work-items/{itemId}
+  update_endpoint: PATCH /projects/{projectId}/work-items/internal/{itemId}
 quality_expectations:
   - Priority recommendations include tradeoffs.

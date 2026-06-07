@@ -29,7 +29,7 @@ required_context:
 constraints:
   - Suggest status updates when evidence is incomplete or approval is required.
   - Treat PR metadata as event-provided because the current OpenAPI document has no PR artifact endpoint.
-  - Status updates must use UpdateWorkItemDto.status.
+  - Status updates must use UpdateWorkItemForInternalDto.status.
 default_execution_mode: suggest
 approval_policy:
   update_workitem_status: user_approval_required

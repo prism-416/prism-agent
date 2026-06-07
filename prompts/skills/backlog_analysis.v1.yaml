@@ -22,4 +22,4 @@ guardrails:
   search_limit_max: 100
 quality_expectations:
   - Recommendations explain why backlog quality would improve.
-  - Proposed changes only use UpdateWorkItemDto fields.
+  - Proposed changes only use UpdateWorkItemForInternalDto fields when executed as mutations.

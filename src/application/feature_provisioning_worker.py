@@ -56,7 +56,13 @@ class FeatureProvisioningWorker:
         if failures:
             raise RuntimeError(failures[-1].message)
         if not any(trace.event_name == "plan.completed" for trace in traces):
-            raise RuntimeError("Feature provisioning did not complete all planned actions.")
+            trace_summary = "; ".join(
+                f"{trace.event_name}: {trace.message}" for trace in traces[-5:]
+            )
+            raise RuntimeError(
+                "Feature provisioning did not complete all planned actions."
+                f" Recent traces: {trace_summary}"
+            )
 
         self.state_store.record_idempotency_key(pointer.worker_idempotency_key)
         return FeatureProvisioningResult(request_id=pointer.request_id, event_id=event.event_id)

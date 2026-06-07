@@ -15,6 +15,12 @@ def test_settings_do_not_expose_prompt_path_env_override(monkeypatch) -> None:
         Settings(prompts_path="custom-prompts")
 
 
+def test_settings_accept_prism_api_state_backend() -> None:
+    settings = Settings(state_backend="prism_api")
+
+    assert settings.state_backend == "prism_api"
+
+
 def test_settings_resolves_runtime_secrets_from_oci_vault_ocids(monkeypatch) -> None:
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("PRISM_API_TOKEN", raising=False)

@@ -9,6 +9,10 @@ from urllib.request import Request, urlopen
 from domain.events import BaseRuntimeEvent
 
 
+class PrismApiNotFoundError(RuntimeError):
+    """Raised when the Prism API returns 404 for a requested resource."""
+
+
 class PrismApiClient:
     """Prism API boundary.
 
@@ -83,14 +87,14 @@ class PrismApiClient:
     def create_sprint(self, workspace_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request_json(
             "POST",
-            f"/workspaces/{quote(workspace_id, safe='')}/sprints",
+            f"/workspaces/{quote(workspace_id, safe='')}/sprints/internal",
             payload,
         )
 
     def create_work_item(self, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request_json(
             "POST",
-            f"/projects/{quote(project_id, safe='')}/work-items",
+            f"/projects/{quote(project_id, safe='')}/work-items/internal",
             payload,
         )
 
@@ -102,16 +106,32 @@ class PrismApiClient:
     ) -> dict[str, Any]:
         return self._request_json(
             "PATCH",
-            f"/projects/{quote(project_id, safe='')}/work-items/{quote(item_id, safe='')}",
+            f"/projects/{quote(project_id, safe='')}/work-items/internal/{quote(item_id, safe='')}",
             payload,
         )
+
+    def get_agent_run(self, workspace_id: str, run_id: str) -> dict[str, Any]:
+        return self._request_json(
+            "GET",
+            f"/workspaces/{quote(workspace_id, safe='')}/agent-runs/{quote(run_id, safe='')}",
+        )
+
+    def get_agent_run_actions(self, workspace_id: str, run_id: str) -> list[dict[str, Any]]:
+        data = self._request_json(
+            "GET",
+            f"/workspaces/{quote(workspace_id, safe='')}/agent-runs/"
+            f"{quote(run_id, safe='')}/actions",
+        )
+        if not isinstance(data, list):
+            raise RuntimeError("Prism API agent run actions response must be a list.")
+        return [item for item in data if isinstance(item, dict)]
 
     def _request_json(
         self,
         method: str,
         path: str,
         payload: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+    ) -> Any:
         if not self.base_url:
             raise RuntimeError("PRISM_API_BASE_URL is required for live Prism API calls.")
         data = None if payload is None else json.dumps(payload).encode("utf-8")
@@ -119,7 +139,7 @@ class PrismApiClient:
         if payload is not None:
             headers["Content-Type"] = "application/json"
         if self.token:
-            headers["Authorization"] = f"Bearer {self.token}"
+            headers["x-internal-api-token"] = self.token
         request = Request(
             f"{self.base_url}{path}",
             data=data,
@@ -131,15 +151,19 @@ class PrismApiClient:
                 raw = response.read().decode("utf-8")
         except HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
+            if exc.code == 404:
+                raise PrismApiNotFoundError(
+                    f"Prism API {method} {path} returned 404: {detail}"
+                ) from exc
             raise RuntimeError(f"Prism API {method} {path} failed: {exc.code} {detail}") from exc
         if not raw:
             return {}
         decoded = json.loads(raw)
-        if isinstance(decoded, dict) and isinstance(decoded.get("data"), dict):
+        if isinstance(decoded, dict) and "data" in decoded:
             return decoded["data"]
         if isinstance(decoded, dict):
             return decoded
-        raise RuntimeError(f"Prism API {method} {path} returned non-object JSON.")
+        raise RuntimeError(f"Prism API {method} {path} returned unsupported JSON.")
 
     @staticmethod
     def _default_entity(context_key: str, event: BaseRuntimeEvent) -> dict[str, Any]:

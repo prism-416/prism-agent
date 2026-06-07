@@ -16,6 +16,9 @@ class CreateSprintTool(BaseAgentTool):
         workspace_id = str(action.input.get("workspaceId") or context.workspace_id)
         payload = _create_sprint_payload(action.input)
         if self.prism_client and self.prism_client.is_configured:
+            requested_by_user_id = _requested_by_user_id(action.input, context)
+            if requested_by_user_id:
+                payload.setdefault("requestedByUserId", requested_by_user_id)
             output = self.prism_client.create_sprint(workspace_id, payload)
         else:
             output = {
@@ -69,9 +72,19 @@ def _create_sprint_payload(input_data: dict) -> dict:
         "startsAt": input_data.get("startsAt") or default_start,
         "endsAt": input_data.get("endsAt") or default_end,
     }
-    optional_fields = ("goal", "status")
+    optional_fields = ("goal",)
     for field in optional_fields:
         value = input_data.get(field)
         if value is not None:
             payload[field] = value
     return payload
+
+
+def _requested_by_user_id(input_data: dict, context: AgentContext) -> str | None:
+    requested_by_user_id = input_data.get("requestedByUserId")
+    if requested_by_user_id:
+        return str(requested_by_user_id)
+    queue_pointer = context.source_event.event.payload.get("queue_pointer", {})
+    if isinstance(queue_pointer, dict) and queue_pointer.get("requestedByUserId"):
+        return str(queue_pointer["requestedByUserId"])
+    return None

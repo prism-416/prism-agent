@@ -5,7 +5,8 @@ name: Assign Work Item
 description: Assigns a work item to a workspace member.
 usage:
   - Use only when assignment is explicitly requested or policy-selected.
-  - Implement as PATCH /projects/{projectId}/work-items/{itemId} with UpdateWorkItemDto.assigneeUsernames.
+  - Implement as PATCH /projects/{projectId}/work-items/internal/{itemId} with UpdateWorkItemForInternalDto.assigneeUsernames.
+  - Include requestedByUserId from the feature-provisioning queue pointer when available.
   - Assignees are usernames from ProjectMemberListResponseDto.username, not user IDs.
 do_not_use:
   - Do not use to infer ownership without evidence.
@@ -13,13 +14,14 @@ risk_level: medium
 approval_policy: user_approval_required
 api:
   method: PATCH
-  path: /projects/{projectId}/work-items/{itemId}
-  request_schema: UpdateWorkItemDto
+  path: /projects/{projectId}/work-items/internal/{itemId}
+  request_schema: UpdateWorkItemForInternalDto
   response_schema: WorkItemResponseDto
   response_wrapper: data
 input_contract:
   projectId: string
   itemId: string
   assigneeUsernames: unique username list
+  requestedByUserId: optional uuid
 constraints:
   assignee_username_max_length: 30

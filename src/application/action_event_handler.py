@@ -34,6 +34,20 @@ class ActionEventHandler:
         action = plan.get_action(event.action_id)
         if action is None:
             raise ActionNotFoundError(event.action_id)
+
+        if action.status != ActionStatus.PENDING:
+            self._trace(
+                event,
+                "action.not_pending",
+                "Skipped action because hydrated state is not pending.",
+                plan.plan_id,
+                action.action_id,
+                {"tool_name": action.tool_name, "status": action.status},
+            )
+            if action.status in {ActionStatus.COMPLETED, ActionStatus.SKIPPED}:
+                self._enqueue_next_action(envelope, plan)
+            return
+
         snapshot = self.state_store.get_context_snapshot(
             event.workspace_id, plan.context_snapshot_ref
         )
