@@ -35,56 +35,49 @@ OCIR_REPOSITORY_NAME
 The deployment workflow intentionally does not write program-specific function config.
 It only builds/pushes the image and creates or updates the function resource. Runtime
 configuration belongs in OCI Function Application config or OCI Function config.
+OCI exposes those configuration values to the function as environment variables.
 
 Set these runtime configuration values in OCI, not GitHub Actions:
 
 ```text
 APP_ENV=prod
-STATE_BACKEND=object_storage
+STATE_BACKEND=prism_api
 QUEUE_BACKEND=oci
 LLM_PROVIDER=gemini
-GEMINI_API_KEY_SECRET_OCID=<vault secret ocid>
-DEFAULT_GEMINI_MODEL=gemini-2.5-pro
+GEMINI_API_KEY=<gemini api key>
+DEFAULT_GEMINI_MODEL=gemini-3.1-pro-preview
 MAX_RECURSION_DEPTH=10
+OCI_AUTH_MODE=instance_principal
 OCI_QUEUE_OCID=<queue ocid>
 OCI_QUEUE_MESSAGES_ENDPOINT=<queue messages endpoint>
-OCI_BUCKET_NAME=<state bucket>
-OCI_NAMESPACE=<object storage namespace>
-OCI_PAYLOAD_BUCKET_NAME=<payload bucket, optional>
-OCI_PAYLOAD_NAMESPACE=<payload namespace, optional>
+OCI_OBJECT_STORAGE_BUCKET_NAME=<payload bucket>
+OCI_OBJECT_STORAGE_NAMESPACE=<object storage namespace>
 PRISM_API_BASE_URL=<api base url>
-PRISM_API_TOKEN_SECRET_OCID=<vault secret ocid>
+PRISM_API_TOKEN=<internal api token>
 ```
 
 Runtime follow-up events are published with the OCI Queue Python SDK by
 `src/infrastructure/queue/oci_queue.py`.
 
-Program-specific secrets should live in OCI Vault, not GitHub Actions. Create OCI Vault
-secrets for:
+Program-specific runtime credentials should live in OCI Function Application config or
+OCI Function config, not GitHub Actions. Configure these values directly:
 
 ```text
 GEMINI_API_KEY
 PRISM_API_TOKEN
 ```
 
-Then set the secret OCIDs in OCI Function Application config or OCI Function config:
-
-```text
-GEMINI_API_KEY_SECRET_OCID
-PRISM_API_TOKEN_SECRET_OCID
-```
-
-At runtime, `Settings.from_env()` reads those OCIDs and resolves the current secret values
-with the OCI Secrets API. Direct `GEMINI_API_KEY` and `PRISM_API_TOKEN` env vars still work
-for local development and take precedence when present.
+At runtime, `Settings.from_env()` reads `GEMINI_API_KEY` and `PRISM_API_TOKEN` from the
+function environment that OCI derives from the configured application/function values.
+The same env vars still work for local development through an untracked `.env` file or
+shell environment.
 
 The OCI Function application must already exist. The function itself does not need to exist:
 the workflow creates it on first deploy and updates the image on later deploys.
 
 OCI IAM policies must allow the deploy user to manage functions, read the function
 application, and manage the target OCIR repository. The deployed function's resource
-principal must be allowed to read the configured Vault secrets and read/write the configured
-queue and Object Storage buckets.
+principal must be allowed to read/write the configured queue and Object Storage buckets.
 
 This workflow creates or updates the function resource only. Configure any external
 invocation source, such as API Gateway, Events, Connector Hub, or another service integration,

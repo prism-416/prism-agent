@@ -21,46 +21,33 @@ def test_settings_accept_prism_api_state_backend() -> None:
     assert settings.state_backend == "prism_api"
 
 
-def test_settings_resolves_runtime_secrets_from_oci_vault_ocids(monkeypatch) -> None:
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    monkeypatch.delenv("PRISM_API_TOKEN", raising=False)
-    monkeypatch.setenv("GEMINI_API_KEY_SECRET_OCID", "ocid1.vaultsecret.gemini")
-    monkeypatch.setenv("PRISM_API_TOKEN_SECRET_OCID", "ocid1.vaultsecret.prism")
-
-    def fake_fetch_secret_text(secret_ocid: str) -> str:
-        return {
-            "ocid1.vaultsecret.gemini": "gemini-secret",
-            "ocid1.vaultsecret.prism": "prism-secret",
-        }[secret_ocid]
-
-    monkeypatch.setattr(
-        "infrastructure.config.settings.fetch_secret_text",
-        fake_fetch_secret_text,
-    )
-
-    settings = Settings.from_env()
-
-    assert settings.gemini_api_key == "gemini-secret"
-    assert settings.gemini_api_key_secret_ocid == "ocid1.vaultsecret.gemini"
-    assert settings.prism_api_token == "prism-secret"
-    assert settings.prism_api_token_secret_ocid == "ocid1.vaultsecret.prism"
+def test_settings_rejects_object_storage_state_backend() -> None:
+    with pytest.raises(ValidationError):
+        Settings(state_backend="object_storage")
 
 
-def test_settings_prefers_direct_runtime_secret_env_values(monkeypatch) -> None:
+def test_settings_reads_runtime_credentials_from_application_config(monkeypatch) -> None:
     monkeypatch.setenv("GEMINI_API_KEY", "direct-gemini")
     monkeypatch.setenv("PRISM_API_TOKEN", "direct-prism")
-    monkeypatch.setenv("GEMINI_API_KEY_SECRET_OCID", "ocid1.vaultsecret.gemini")
-    monkeypatch.setenv("PRISM_API_TOKEN_SECRET_OCID", "ocid1.vaultsecret.prism")
-
-    def fail_fetch_secret_text(secret_ocid: str) -> str:
-        raise AssertionError(f"Unexpected OCI Vault fetch: {secret_ocid}")
-
-    monkeypatch.setattr(
-        "infrastructure.config.settings.fetch_secret_text",
-        fail_fetch_secret_text,
-    )
 
     settings = Settings.from_env()
 
     assert settings.gemini_api_key == "direct-gemini"
     assert settings.prism_api_token == "direct-prism"
+
+
+def test_settings_do_not_expose_oci_vault_secret_ocids() -> None:
+    assert "gemini_api_key_secret_ocid" not in Settings.model_fields
+    assert "prism_api_token_secret_ocid" not in Settings.model_fields
+    with pytest.raises(ValidationError):
+        Settings(gemini_api_key_secret_ocid="ocid1.vaultsecret.gemini")
+
+
+def test_settings_loads_object_storage_payload_bucket(monkeypatch) -> None:
+    monkeypatch.setenv("OCI_OBJECT_STORAGE_NAMESPACE", "api-namespace")
+    monkeypatch.setenv("OCI_OBJECT_STORAGE_BUCKET_NAME", "api-bucket")
+
+    settings = Settings.from_env()
+
+    assert settings.object_storage_namespace == "api-namespace"
+    assert settings.object_storage_bucket_name == "api-bucket"

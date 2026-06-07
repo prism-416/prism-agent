@@ -19,6 +19,14 @@ def handler(ctx: Any, data: bytes | str | dict[str, Any]) -> dict[str, Any]:
 
     envelope = EventEnvelope.model_validate(payload)
     container = build_container(settings)
+    if container.recursion_runner.exceeds_max_depth(envelope):
+        container.recursion_runner.record_max_depth_failure(envelope.event)
+        return {
+            "ok": False,
+            "event_id": envelope.event_id,
+            "event_type": envelope.event_type,
+            "reason": "max_recursion_depth_exceeded",
+        }
 
     if isinstance(envelope.event, AgentActionEvent):
         container.action_event_handler.handle(envelope)
@@ -68,8 +76,8 @@ def _handle_feature_provisioning_pointer(
     payload: dict[str, Any],
 ) -> dict[str, Any]:
     payload_store = ObjectStoragePayloadStore(
-        settings.oci_payload_namespace or settings.oci_namespace,
-        settings.oci_payload_bucket_name or settings.oci_bucket_name,
+        settings.object_storage_namespace,
+        settings.object_storage_bucket_name,
     )
     worker_container = build_container(settings.model_copy(update={"queue_backend": "memory"}))
     worker = FeatureProvisioningWorker(

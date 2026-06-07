@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import os
 from collections.abc import Callable
 from typing import Any
 
 from domain.events import EventEnvelope
+from infrastructure.oci_auth import load_oci_config_and_signer
 from infrastructure.queue.base import Queue, QueueMessage
 
 
@@ -71,10 +71,10 @@ def build_queue_client(messages_endpoint: str | None = None) -> Any:
     if messages_endpoint:
         kwargs["service_endpoint"] = messages_endpoint
 
-    if os.getenv("OCI_RESOURCE_PRINCIPAL_VERSION"):
-        signer = oci.auth.signers.get_resource_principals_signer()
-        return oci.queue.QueueClient(config={}, signer=signer, **kwargs)
-    return oci.queue.QueueClient(oci.config.from_file(), **kwargs)
+    config, signer = load_oci_config_and_signer("OCI Queue")
+    if signer is not None:
+        return oci.queue.QueueClient(config=config, signer=signer, **kwargs)
+    return oci.queue.QueueClient(config, **kwargs)
 
 
 def _build_put_messages_details(content: str) -> Any:
