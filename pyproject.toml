@@ -14,7 +14,8 @@ dependencies = [
 ]
 
 [project.scripts]
-agent-test = "interfaces.test_commands:agent_test"
+agent-local = "interfaces.test_commands:main"
+agent-test = "interfaces.test_commands:main"
 
 [project.optional-dependencies]
 prod = [

@@ -14,8 +14,11 @@ class GeminiModelProvider:
         return prompt.model.name or self.settings.default_gemini_model
 
     def pydantic_ai_model_ref(self, prompt: WorkflowPromptDefinition) -> str:
-        return f"google-gla:{self.model_name_for(prompt)}"
+        return f"google:{self.model_name_for(prompt)}"
 
     def configure_environment(self) -> None:
-        if self.settings.gemini_api_key and not os.getenv("GOOGLE_API_KEY"):
-            os.environ["GOOGLE_API_KEY"] = self.settings.gemini_api_key
+        if self.settings.gemini_api_key:
+            os.environ["GEMINI_API_KEY"] = self.settings.gemini_api_key
+            os.environ.pop("GOOGLE_API_KEY", None)
+        if not os.getenv("GEMINI_API_KEY") and not os.getenv("GOOGLE_API_KEY"):
+            raise RuntimeError("GEMINI_API_KEY or GOOGLE_API_KEY is required for Gemini planning.")

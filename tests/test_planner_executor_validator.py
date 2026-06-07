@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from application.context_provider import ContextProvider
@@ -28,6 +30,7 @@ def test_planner_outputs_agent_plan_schema(prompts_path) -> None:
         event_type="story.created",
         workspace_id="w1",
         project_id="p1",
+        correlation_id="story-run-1",
         payload={
             "story": {"id": "s1", "title": "Invite teammates", "version": 1},
             "entity_versions": {"story:s1": 1},
@@ -43,8 +46,9 @@ def test_planner_outputs_agent_plan_schema(prompts_path) -> None:
         PydanticAIAgentFactory(GeminiModelProvider(Settings())),
     )
 
-    plan = planner.create_plan(snapshot.context, snapshot.ref, workflow)
+    plan = planner.create_plan(snapshot.context, snapshot.ref, workflow, "story-run-1")
 
+    assert plan.plan_id == "story-run-1"
     assert plan.prompt_id == "story.decompose"
     assert plan.source_event_id == event.event_id
     assert len(plan.actions) >= 1
@@ -74,9 +78,39 @@ def test_agent_factory_composes_workflow_skill_and_tool_prompts(prompts_path) ->
     assert "Workflow: Story Decomposition" in compiled
     assert "Capability: Task Decomposition" in compiled
     assert "Tool: Create Work Item" in compiled
+    assert "Input contract:" in compiled
+    assert "assigneeUsernames" in compiled
+    assert "member_workloads" in compiled
 
 
-def test_live_agent_falls_back_when_llm_returns_empty_plan(prompts_path) -> None:
+def test_gemini_provider_uses_google_model_prefix(prompts_path) -> None:
+    prompt_registry = PromptRegistry(prompts_path)
+    workflow_prompt = prompt_registry.get_workflow("story.decompose", "1.0.0")
+
+    model_ref = GeminiModelProvider(Settings()).pydantic_ai_model_ref(workflow_prompt)
+
+    assert model_ref.startswith("google:")
+    assert not model_ref.startswith("google-gla:")
+
+
+def test_gemini_provider_requires_api_key(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
+    with pytest.raises(RuntimeError, match="GEMINI_API_KEY or GOOGLE_API_KEY is required"):
+        GeminiModelProvider(Settings()).configure_environment()
+
+
+def test_gemini_provider_prefers_gemini_key_without_google_duplicate(monkeypatch) -> None:
+    monkeypatch.setenv("GOOGLE_API_KEY", "stale-google")
+
+    GeminiModelProvider(Settings(gemini_api_key="test-gemini")).configure_environment()
+
+    assert os.environ["GEMINI_API_KEY"] == "test-gemini"
+    assert "GOOGLE_API_KEY" not in os.environ
+
+
+def test_runtime_agent_returns_gemini_plan_without_hardcoded_fallback(prompts_path) -> None:
     prompt_registry = PromptRegistry(prompts_path)
     workflow_prompt = prompt_registry.get_workflow("feature.provision", "1.0.0")
     workflow = WorkflowRegistry.from_prompt_registry(prompt_registry).get("feature.provision")
@@ -98,7 +132,6 @@ def test_live_agent_falls_back_when_llm_returns_empty_plan(prompts_path) -> None
         skill_registry.select(["feature_provisioning"]),
         tools,
         GeminiModelProvider(Settings()),
-        live_llm_enabled=True,
     )
 
     plan = agent.generate_plan(
@@ -107,11 +140,44 @@ def test_live_agent_falls_back_when_llm_returns_empty_plan(prompts_path) -> None
         Planner._approval_policy(workflow.approval_policy),
     )
 
-    assert [action.tool_name for action in plan.actions] == ["create_sprint", "create_workitem"]
-    assert [action.idempotency_key for action in plan.actions] == [
-        "req-live:create_sprint:1",
-        "req-live:create_workitem:2",
-    ]
+    assert plan.actions == []
+
+
+def test_runtime_agent_retries_empty_plan_generation(prompts_path) -> None:
+    prompt_registry = PromptRegistry(prompts_path)
+    workflow_prompt = prompt_registry.get_workflow("feature.provision", "1.0.0")
+    workflow = WorkflowRegistry.from_prompt_registry(prompt_registry).get("feature.provision")
+    event = DomainEvent(
+        event_type="feature.provisioning.requested",
+        workspace_id="w1",
+        project_id="p1",
+        payload={"featureSpecification": "Add roadmap import."},
+        idempotency_key="req-live",
+    )
+    snapshot = ContextProvider(PrismApiClient(), prompt_registry).hydrate(
+        EventEnvelope.wrap(event), workflow
+    )
+    skill_registry = SkillRegistry.from_prompt_registry(prompt_registry)
+    tool_registry = ToolRegistry.from_prompt_registry(prompt_registry)
+    tools = tool_registry.select(skill_registry.allowed_tools_for(["feature_provisioning"]))
+    agent = _RetryingRuntimePlanningAgent(
+        workflow_prompt,
+        skill_registry.select(["feature_provisioning"]),
+        tools,
+        GeminiModelProvider(Settings()),
+    )
+
+    plan = agent.generate_plan(
+        snapshot.context,
+        snapshot.ref,
+        Planner._approval_policy(workflow.approval_policy),
+    )
+
+    assert agent.attempts == 2
+    assert len(plan.actions) == 1
+    assert plan.actions[0].tool_name == "create_workitem"
+    assert "Planning retry feedback:" not in agent.user_prompts[0]
+    assert "Planning retry feedback:" in agent.user_prompts[1]
 
 
 def test_planner_rejects_tools_not_allowed_by_selected_skills(prompts_path) -> None:
@@ -123,7 +189,12 @@ def test_planner_rejects_tools_not_allowed_by_selected_skills(prompts_path) -> N
         prompt_id="story.decompose",
         prompt_version="1.0.0",
     )
-    event = DomainEvent(event_type="story.created", workspace_id="w1", project_id="p1")
+    event = DomainEvent(
+        event_type="story.created",
+        workspace_id="w1",
+        project_id="p1",
+        correlation_id="story-run-2",
+    )
     snapshot = ContextProvider(PrismApiClient(), prompt_registry).hydrate(
         EventEnvelope.wrap(event), workflow
     )
@@ -135,7 +206,7 @@ def test_planner_rejects_tools_not_allowed_by_selected_skills(prompts_path) -> N
     )
 
     with pytest.raises(ValueError, match="not allowed by selected skills"):
-        planner.create_plan(snapshot.context, snapshot.ref, workflow)
+        planner.create_plan(snapshot.context, snapshot.ref, workflow, "story-run-2")
 
 
 class _EmptyLiveRuntimePlanningAgent(RuntimePlanningAgent):
@@ -148,6 +219,46 @@ class _EmptyLiveRuntimePlanningAgent(RuntimePlanningAgent):
             prompt_id=self.workflow_prompt.id,
             prompt_version=self.workflow_prompt.version,
             context_snapshot_ref=context_snapshot_ref,
+        )
+
+
+class _RetryingRuntimePlanningAgent(RuntimePlanningAgent):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.attempts = 0
+        self.user_prompts: list[str] = []
+
+    def _generate_plan_with_pydantic_ai(self, context, context_snapshot_ref):
+        self.attempts += 1
+        self.user_prompts.append(self._render_user_prompt(context, context_snapshot_ref))
+        plan = AgentPlan(
+            source_event_id=context.source_event.event_id,
+            workspace_id=context.workspace_id,
+            project_id=context.project_id,
+            goal=self.workflow_prompt.goal,
+            prompt_id=self.workflow_prompt.id,
+            prompt_version=self.workflow_prompt.version,
+            context_snapshot_ref=context_snapshot_ref,
+        )
+        if self.attempts == 1:
+            return plan
+        return plan.model_copy(
+            update={
+                "actions": [
+                    PlannedAction(
+                        plan_id=plan.plan_id,
+                        action_type="mutation",
+                        tool_name="create_workitem",
+                        instruction="Create the requested feature work item.",
+                        input={
+                            "projectId": context.project_id,
+                            "title": "Roadmap import",
+                            "description": "Add roadmap import.",
+                        },
+                        idempotency_key="retry:create_workitem:1",
+                    )
+                ]
+            }
         )
 
 
@@ -175,8 +286,9 @@ def test_planner_normalizes_live_llm_runtime_control_fields(prompts_path) -> Non
         _UnnormalizedAllowedToolAgentFactory(),
     )
 
-    plan = planner.create_plan(snapshot.context, snapshot.ref, workflow)
+    plan = planner.create_plan(snapshot.context, snapshot.ref, workflow, "req-live")
 
+    assert plan.plan_id == "req-live"
     assert plan.source_event_id == event.event_id
     assert plan.workspace_id == "w1"
     assert plan.project_id == "p1"
@@ -262,6 +374,7 @@ class _UnnormalizedAllowedToolAgent:
         )
         return plan.model_copy(
             update={
+                "plan_id": "llm-plan",
                 "actions": [
                     PlannedAction(
                         plan_id="llm-plan",
@@ -285,7 +398,7 @@ class _UnnormalizedAllowedToolAgent:
                         status=ActionStatus.COMPLETED,
                         idempotency_key="llm-key-2",
                     ),
-                ]
+                ],
             }
         )
 
@@ -321,6 +434,38 @@ def test_executor_runs_exactly_one_action(prompts_path) -> None:
     assert result.success is True
     assert result.action_id == action.action_id
     assert result.suggestion is not None
+
+
+def test_link_pull_request_tool_returns_planned_pr_identity(prompts_path) -> None:
+    event = DomainEvent(
+        event_type="pr.opened",
+        workspace_id="w1",
+        project_id="p1",
+        payload={},
+    )
+    workflow = WorkflowRegistry.with_defaults().get("pr.status_sync")
+    context = (
+        ContextProvider(PrismApiClient(), PromptRegistry(prompts_path))
+        .hydrate(EventEnvelope.wrap(event), workflow)
+        .context
+    )
+    action = PlannedAction(
+        plan_id="plan-1",
+        action_type="link",
+        tool_name="link_pull_request",
+        instruction="Record the PR relationship.",
+        input={"projectId": "p1", "itemId": "item-1", "pull_request_id": "pr-1"},
+        idempotency_key="k1",
+    )
+
+    result = Executor(ToolRegistry.from_prompt_registry(PromptRegistry(prompts_path))).execute_one(
+        action,
+        context,
+    )
+
+    assert result.success is True
+    assert result.output["itemId"] == "item-1"
+    assert result.output["pull_request_id"] == "pr-1"
 
 
 def test_validator_detects_stale_context() -> None:

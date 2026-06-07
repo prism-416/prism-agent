@@ -15,6 +15,7 @@ class PlanStatus(StrEnum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
     WAITING_FOR_APPROVAL = "waiting_for_approval"
     REPLAN_REQUIRED = "replan_required"
 
@@ -46,6 +47,14 @@ class AgentPlan(BaseModel):
         }
 
     def next_pending_action(self) -> PlannedAction | None:
+        if self.status in {
+            PlanStatus.COMPLETED,
+            PlanStatus.FAILED,
+            PlanStatus.CANCELLED,
+            PlanStatus.WAITING_FOR_APPROVAL,
+            PlanStatus.REPLAN_REQUIRED,
+        }:
+            return None
         completed = self.completed_action_ids()
         for action in self.actions:
             if action.status == ActionStatus.PENDING and action.is_unblocked(completed):

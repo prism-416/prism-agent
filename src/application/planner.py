@@ -36,6 +36,7 @@ class Planner:
         context: AgentContext,
         context_snapshot_ref: str,
         workflow: WorkflowDefinition,
+        agent_run_id: str,
     ) -> AgentPlan:
         workflow_prompt = self.prompt_registry.get_workflow(
             workflow.prompt_id,
@@ -53,6 +54,7 @@ class Planner:
             plan,
             context,
             context_snapshot_ref,
+            agent_run_id,
             workflow_prompt.id,
             workflow_prompt.version,
             workflow_prompt.goal,
@@ -93,6 +95,7 @@ class Planner:
         plan: AgentPlan,
         context: AgentContext,
         context_snapshot_ref: str,
+        agent_run_id: str,
         prompt_id: str,
         prompt_version: str,
         goal: str,
@@ -100,13 +103,13 @@ class Planner:
         tool_names: list[str],
         approval_policy: ActionApprovalPolicy,
     ) -> AgentPlan:
-        idempotency_prefix = context.source_event.event.idempotency_key or plan.plan_id
+        idempotency_prefix = context.source_event.event.idempotency_key or agent_run_id
         normalized_actions: list[PlannedAction] = []
         previous_action_id: str | None = None
         for index, action in enumerate(plan.actions, start=1):
             normalized_action = action.model_copy(
                 update={
-                    "plan_id": plan.plan_id,
+                    "plan_id": agent_run_id,
                     "depends_on": [previous_action_id] if previous_action_id else [],
                     "requires_approval": approval_policy.requires_approval(action.tool_name),
                     "status": ActionStatus.PENDING,
@@ -119,6 +122,7 @@ class Planner:
 
         return plan.model_copy(
             update={
+                "plan_id": agent_run_id,
                 "source_event_id": context.source_event.event_id,
                 "workspace_id": context.workspace_id,
                 "project_id": context.project_id,

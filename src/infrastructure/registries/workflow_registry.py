@@ -14,6 +14,7 @@ class WorkflowDefinition(BaseModel):
     required_skills: list[str]
     prompt_id: str
     prompt_version: str
+    goal: str = ""
     default_execution_mode: str = "suggest"
     approval_policy: dict[str, str] = Field(default_factory=dict)
     max_recursion_depth: int = 10
@@ -47,6 +48,7 @@ class WorkflowRegistry:
             required_skills=prompt.required_skills,
             prompt_id=prompt.id,
             prompt_version=prompt.version,
+            goal=prompt.goal,
             default_execution_mode=prompt.default_execution_mode,
             approval_policy=prompt.approval_policy,
             max_recursion_depth=prompt.max_recursion_depth,

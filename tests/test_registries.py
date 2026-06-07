@@ -5,6 +5,24 @@ from infrastructure.registries.skill_registry import SkillRegistry
 from infrastructure.registries.tool_registry import ToolRegistry
 from infrastructure.registries.workflow_registry import WorkflowRegistry
 
+PROMPT_INTERNAL_TERMS = (
+    "OpenAPI",
+    "Dto",
+    "DTO",
+    "/internal",
+    "internal",
+    "Object Storage",
+    "OCI queue",
+    "queue pointer",
+    "endpoint",
+    "API contract",
+    "requestedByUserId",
+    "runtime",
+    "backend",
+    "runtime_internal",
+    "missing_endpoint",
+)
+
 
 def test_prompt_registry_loads_versioned_yaml(prompts_path) -> None:
     registry = PromptRegistry(prompts_path)
@@ -17,6 +35,33 @@ def test_prompt_registry_loads_versioned_yaml(prompts_path) -> None:
     assert "task_decomposition" in workflow_prompt.required_skills
     assert "create_agent_suggestion" in skill_prompt.allowed_tools
     assert tool_prompt.approval_policy == "auto_commit"
+
+
+def test_prompt_text_avoids_backend_and_runtime_internals(prompts_path) -> None:
+    for path in prompts_path.rglob("*.yaml"):
+        text = path.read_text(encoding="utf-8")
+        for term in PROMPT_INTERNAL_TERMS:
+            assert term not in text, f"{path} leaks internal term {term!r}"
+
+
+def test_tool_prompt_contracts_are_planner_facing(prompts_path) -> None:
+    registry = PromptRegistry(prompts_path)
+    tools = registry.list_tools()
+
+    for tool in tools:
+        extras = tool.model_extra or {}
+        assert "api" not in extras
+        assert "constraints" not in extras
+        assert "requestedByUserId" not in str(tool.input_contract)
+
+    suggestion_contract = registry.get_tool("create_agent_suggestion").input_contract
+    assert "target_entity_ref" in suggestion_contract
+    assert "targetType" not in suggestion_contract
+    assert "targetId" not in suggestion_contract
+
+    report_contract = registry.get_tool("generate_sprint_report").input_contract
+    assert "sprint_id" in report_contract
+    assert "sprintId" not in report_contract
 
 
 def test_tool_registry_loads_default_tools() -> None:
