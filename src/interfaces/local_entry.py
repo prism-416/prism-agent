@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from app.container import build_container
 from domain.events import DomainEvent, EventEnvelope, RuntimeEvent
 from domain.results import TraceEvent
@@ -23,6 +25,13 @@ def print_trace(traces: list[TraceEvent]) -> None:
         plan = f" plan={trace.plan_id}" if trace.plan_id else ""
         action = f" action={trace.action_id}" if trace.action_id else ""
         print(f"[{trace.event_name}]{plan}{action} {trace.message}")
+        if trace.data:
+            print(_format_trace_data(trace.data))
+
+
+def _format_trace_data(data: dict) -> str:
+    rendered = json.dumps(data, indent=2, sort_keys=True, default=str)
+    return "\n".join(f"  {line}" for line in rendered.splitlines())
 
 
 def example_seed_event() -> DomainEvent:

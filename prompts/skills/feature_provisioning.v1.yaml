@@ -5,22 +5,22 @@ name: Feature Provisioning
 description: Converts a requested feature specification into a sprint and implementation tasks.
 instruction: >
   Turn a hydrated feature provisioning payload into a concise sprint goal and
-  implementation work items that match the Prism API contracts.
+  implementation work items that match the selected tools' contracts.
 reasoning_instructions:
-  - Treat the OCI queue message as pointer metadata only; use the Object Storage payload as the source of truth.
-  - Create the sprint through the workspace-scoped sprint API.
-  - Create work items through the project-scoped work item API.
-  - Assign teammates by setting assigneeUsernames on create_workitem or update_workitem payloads.
-  - Do not attempt to attach work items to a sprint until a sprint-work-item mapping API exists.
-  - Keep work item titles within the API's 100 character title limit.
-  - Put acceptance criteria inside description because CreateWorkItemDto has no separate acceptance criteria field.
+  - Treat hydrated feature request context as the source of truth.
+  - Create the sprint through the selected sprint tool.
+  - Create work items through the selected work item tool.
+  - Assign teammates only when hydrated member context provides a username, relevant jobNames, and acceptable workspace workload.
+  - Use member_workloads activeItemCount, overdueItemCount, and dueThisWeekItemCount as current load evidence; if workload is missing or unavailable, be conservative and leave ambiguous work unassigned.
+  - Do not attach work items to a sprint unless a selected tool explicitly supports sprint work item mapping.
+  - Keep work item titles concise enough for Prism work item titles.
+  - Put acceptance criteria inside the work item description.
 allowed_tools:
   - create_sprint
   - create_workitem
   - update_workitem
 guardrails:
   max_work_items: 12
-  default_sprint_status: planned
   work_item_statuses:
     - todo
     - in_progress
@@ -30,4 +30,5 @@ guardrails:
 quality_expectations:
   - The sprint has a clear goal derived from featureSpecification.
   - Each generated work item has an implementation outcome and reviewable acceptance criteria.
-  - Work item payloads conform to CreateWorkItemDto or UpdateWorkItemDto.
+  - Assigned work items include a defensible role and workload match in the action instruction.
+  - Work item payloads conform to the selected tool input contracts.

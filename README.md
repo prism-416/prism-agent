@@ -39,7 +39,7 @@ The beta runtime supports these core use cases:
 - Loading workflow, skill, and tool prompt definitions from YAML.
 - Enforcing skill-based tool whitelists before planned actions execute.
 - Running local recursive execution with in-memory queue and state adapters.
-- Executing deterministic local plans for repeatable development and tests.
+- Using Gemini to create structured plans for local and production execution.
 - Integrating Prizmatic API boundary methods for sprint and work item mutations.
 - Providing OCI Function and object-storage adapter skeletons for production deployment.
 
@@ -47,14 +47,15 @@ Known beta limitations and schedule adjustments:
 
 - `OCIQueue` is still an adapter skeleton; production queue enqueue/dequeue work is
   scheduled for final-release hardening.
-- Sprint work item mapping is pending a backend mutation endpoint. Feature
-  provisioning can create sprints and work items, but it cannot attach work items
-  to a sprint until the backend API adds that endpoint.
-- Agent suggestions, dashboard insights, sprint reports, PR linked artifacts, and
-  optimistic concurrency metadata are documented API gaps. See
+- Sprint work item mapping is pending an agent tool. The backend API exposes
+  sprint work item mutation endpoints, but the runtime currently creates sprints
+  and work items without attaching generated work items to the sprint.
+- Dashboard insights, sprint reports, PR linked artifacts, and optimistic
+  concurrency metadata are documented API gaps. See
   [docs/api_alignment.md](docs/api_alignment.md).
-- Local development does not require a database or external services. Production
-  mode requires Prizmatic API credentials and OCI resources.
+- Local worker development uses Prizmatic API credentials by default; pass
+  `--offline` only for explicit in-memory dry runs. Production mode also
+  requires OCI resources.
 
 ## Repository Layout
 
@@ -179,12 +180,23 @@ local files.
 
 ## Run the Local Agent
 
-Local mode uses in-memory state and queue adapters. It does not require a
-database, OCI, Prizmatic API credentials, or a live LLM key.
+The local worker runs in the local process with an in-memory queue, but uses the
+Prizmatic API for state syncing and tool execution. Set the API config in `.env`
+or your shell:
 
 ```bash
-python -m interfaces.cli tests/fixtures/seed_events/story_created.json
+PRISM_API_BASE_URL=http://localhost:4000
+PRISM_API_TOKEN=<internal api token>
 ```
+
+```bash
+agent-local tests/fixtures/feature_provisioning_pointer.local.json
+```
+
+The input JSON is the source of truth for runtime IDs. Feature-provisioning
+pointer files already carry `workspaceId` and `projectId`; domain seed events
+must carry real `workspace_id` and `project_id` values before they can be used in
+API mode.
 
 Other seed events are available in `tests/fixtures/seed_events/`, including:
 
@@ -197,14 +209,35 @@ If imports fail because the package was not installed in editable mode, run with
 `PYTHONPATH=src`:
 
 ```bash
-PYTHONPATH=src python -m interfaces.cli tests/fixtures/seed_events/story_created.json
+PYTHONPATH=src python -m interfaces.test_commands tests/fixtures/seed_events/story_created.json
 ```
 
 On Windows PowerShell:
 
 ```powershell
 $env:PYTHONPATH = "src"
-python -m interfaces.cli tests/fixtures/seed_events/story_created.json
+python -m interfaces.test_commands tests/fixtures/seed_events/story_created.json
+```
+
+For local feature-provisioning development, pass a pointer JSON file. In API mode,
+the command hydrates the real feature payload from OCI Object Storage using the
+pointer's `payloadObjectName` and `payloadVersionId`:
+
+```bash
+agent-local tests/fixtures/feature_provisioning_pointer.local.json
+```
+
+To run against a local copy of the hydrated feature request, pass the payload file
+explicitly:
+
+```bash
+agent-local tests/fixtures/feature_provisioning_pointer.local.json --payload-file path/to/payload.json
+```
+
+For a no-API dry run, pass `--offline` explicitly:
+
+```bash
+agent-local tests/fixtures/feature_provisioning_pointer.local.json --offline
 ```
 
 ## Test the Software
@@ -239,29 +272,30 @@ python -m pytest -p no:cacheprovider
 
 ## Services and Configuration
 
-Local development uses defaults from `Settings.from_env()` and requires no
-external services.
+Local worker development uses defaults from `Settings.from_env()` and requires
+`PRISM_API_BASE_URL` and `PRISM_API_TOKEN` unless `agent-local --offline` is used.
 
 Optional environment variables:
 
 | Variable | Use |
 | --- | --- |
-| `APP_ENV` | `local` or `prod`; live LLM planning only runs in `prod` with a Gemini key. |
-| `STATE_BACKEND` | `memory` or `object_storage`. |
+| `APP_ENV` | `local` or `prod`; Gemini planning is used in both modes. |
+| `STATE_BACKEND` | `memory` for local tests or `prism_api` for DB/API-backed runtime state. |
 | `QUEUE_BACKEND` | `memory` or `oci`. |
-| `GEMINI_API_KEY` | Gemini API key for production LLM planning. |
-| `DEFAULT_GEMINI_MODEL` | Default Gemini model; currently defaults to `gemini-2.5-pro`. |
+| `GEMINI_API_KEY` | Gemini API key for agent planning in local and production runs. |
+| `DEFAULT_GEMINI_MODEL` | Default Gemini model; currently defaults to `gemini-3.1-pro-preview`. |
 | `MAX_RECURSION_DEPTH` | Safety limit for recursive event processing. |
 | `PRISM_API_BASE_URL` | Base URL for live Prizmatic API calls. |
-| `PRISM_API_TOKEN` | Bearer token for live Prizmatic API calls. |
+| `PRISM_API_TOKEN` | Internal API token sent as `x-internal-api-token` for live Prizmatic API calls. |
 | `OCI_QUEUE_OCID` | Required when `QUEUE_BACKEND=oci`. |
-| `OCI_NAMESPACE` | Required for OCI object storage state. |
-| `OCI_BUCKET_NAME` | Required for OCI object storage state. |
-| `OCI_PAYLOAD_NAMESPACE` | Optional separate namespace for feature-provisioning payloads. |
-| `OCI_PAYLOAD_BUCKET_NAME` | Optional separate bucket for feature-provisioning payloads. |
+| `OCI_AUTH_MODE` | Optional OCI auth mode: `instance_principal`, `resource_principal`, `api_key`, or `config_file`. |
+| `OCI_OBJECT_STORAGE_NAMESPACE` | Required for feature-provisioning payload hydration from Object Storage. |
+| `OCI_OBJECT_STORAGE_BUCKET_NAME` | Required for feature-provisioning payload hydration from Object Storage. |
+| `OCI_TENANCY_OCID`, `OCI_USER_OCID`, `OCI_FINGERPRINT`, `OCI_REGION`, `OCI_PRIVATE_KEY` | Optional local API-key auth credentials when not using `~/.oci/config`. |
 
 Do not commit real secrets. Keep local secrets in an untracked `.env` file or in
-your shell environment.
+your shell environment. In OCI Functions, set production runtime credentials through
+Function Application config or Function config so OCI exposes them as env vars.
 
 ## API Design Documentation
 
@@ -296,8 +330,8 @@ Schedule adjustments made during beta:
   adapter is a skeleton.
 - Sprint work item attachment depends on a missing backend endpoint, so it is
   tracked as an API dependency instead of a completed beta feature.
-- Live LLM planning is limited to production configuration; local development
-  intentionally uses deterministic plans so tests remain repeatable.
+- Agent planning uses Gemini in local and production configuration. Tests stub
+  Gemini at the test boundary so they remain repeatable without network calls.
 
 Completed features must be verified by a teammate who did not implement the
 feature. Verification bugs should be filed in GitHub Issues and linked from the
@@ -346,5 +380,5 @@ For the weekly in-class meeting, each member should be ready to state:
 Suggested local demo command:
 
 ```bash
-python -m interfaces.cli tests/fixtures/seed_events/story_created.json
+agent-local tests/fixtures/seed_events/story_created.json
 ```

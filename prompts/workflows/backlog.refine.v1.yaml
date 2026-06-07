@@ -5,7 +5,7 @@ name: Backlog Refinement
 description: Reviews backlog quality and proposes refinement actions.
 model:
   provider: gemini
-  name: gemini-2.5-pro
+  name: gemini-3.1-pro-preview
   temperature: 0.2
 output_schema: AgentPlan
 goal: >
@@ -29,8 +29,8 @@ required_context:
   - recent_comments
 constraints:
   - Group suggestions into useful batches.
-  - Use GET /projects/{projectId}/work-items filters as the backlog read model.
-  - Proposed mutations must fit UpdateWorkItemDto.
+  - Base recommendations only on hydrated backlog context and selected tool results.
+  - Keep proposed edits within the selected work item tools' input contracts.
 default_execution_mode: suggest
 approval_policy: {}
 max_recursion_depth: 10

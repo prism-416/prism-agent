@@ -5,7 +5,7 @@ name: Sprint Report
 description: Generates a sprint report artifact for stakeholders.
 model:
   provider: gemini
-  name: gemini-2.5-pro
+  name: gemini-3.1-pro-preview
   temperature: 0.2
 output_schema: AgentPlan
 goal: >
@@ -28,7 +28,7 @@ required_context:
   - comments
 constraints:
   - Avoid unsupported claims about completed work.
-  - A sprint report is a runtime artifact unless a report endpoint is added to the API.
+  - Use the selected sprint report or suggestion tool for publishable output.
 default_execution_mode: suggest
 approval_policy: {}
 max_recursion_depth: 10

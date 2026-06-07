@@ -32,7 +32,13 @@ class FeatureProvisioningWorker:
 
     def handle_pointer(self, content: dict[str, Any]) -> FeatureProvisioningResult:
         pointer = FeatureProvisioningPointerEvent.model_validate(content)
-        if self.state_store.check_idempotency_key(pointer.worker_idempotency_key):
+        run_id = pointer.agent_run_id or pointer.request_id
+        if _check_idempotency_key(
+            self.state_store,
+            pointer.workspace_id,
+            pointer.worker_idempotency_key,
+            run_id,
+        ):
             return FeatureProvisioningResult(
                 request_id=pointer.request_id,
                 event_id=None,
@@ -51,12 +57,49 @@ class FeatureProvisioningWorker:
         failures = [
             trace
             for trace in traces
-            if trace.event_name in {"event.failed", "action.failed", "recursion.max_depth"}
+            if trace.event_name
+            in {"event.failed", "action.failed", "plan.failed", "recursion.max_depth"}
         ]
         if failures:
             raise RuntimeError(failures[-1].message)
         if not any(trace.event_name == "plan.completed" for trace in traces):
-            raise RuntimeError("Feature provisioning did not complete all planned actions.")
+            trace_summary = "; ".join(
+                f"{trace.event_name}: {trace.message}" for trace in traces[-5:]
+            )
+            raise RuntimeError(
+                "Feature provisioning did not complete all planned actions."
+                f" Recent traces: {trace_summary}"
+            )
 
-        self.state_store.record_idempotency_key(pointer.worker_idempotency_key)
+        _record_idempotency_key(
+            self.state_store,
+            pointer.workspace_id,
+            pointer.worker_idempotency_key,
+            run_id,
+        )
         return FeatureProvisioningResult(request_id=pointer.request_id, event_id=event.event_id)
+
+
+def _check_idempotency_key(
+    state_store: StateStore,
+    workspace_id: str,
+    key: str,
+    run_id: str,
+) -> bool:
+    checker = getattr(state_store, "check_workspace_idempotency_key", None)
+    if callable(checker):
+        return bool(checker(workspace_id, key, run_id=run_id))
+    return state_store.check_idempotency_key(key)
+
+
+def _record_idempotency_key(
+    state_store: StateStore,
+    workspace_id: str,
+    key: str,
+    run_id: str,
+) -> None:
+    recorder = getattr(state_store, "record_workspace_idempotency_key", None)
+    if callable(recorder):
+        recorder(workspace_id, key, run_id=run_id)
+        return
+    state_store.record_idempotency_key(key)

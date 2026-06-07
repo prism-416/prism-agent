@@ -10,8 +10,8 @@ reasoning_instructions:
   - Check linked work item state, merge status, test evidence, and completion policy.
   - Do not infer completion from a PR alone when evidence is incomplete.
   - Prefer approval-backed suggestions for user-visible status changes.
-  - Use WorkItemResponseDto.itemId and UpdateWorkItemDto.status when proposing status sync.
-  - Treat GitHub PR data as event-provided context until Prism exposes linked artifact endpoints.
+  - Use hydrated work item identity and the selected status tool when proposing status sync.
+  - Treat GitHub PR data as event-provided context unless hydrated context includes linked PR state.
   - Use comments for teammate-visible PR evidence only when approval policy allows it.
 allowed_tools:
   - create_agent_suggestion
@@ -20,7 +20,6 @@ allowed_tools:
   - link_pull_request
 guardrails:
   completion_requires_policy_evidence: true
-  missing_linked_artifact_api: true
 quality_expectations:
   - Status recommendations explain the PR evidence used.
   - Suggested status transitions use only todo, in_progress, in_review, or done.

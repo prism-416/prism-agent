@@ -5,7 +5,7 @@ name: Pull Request Status Sync
 description: Inspects PR events and proposes safe work item status changes.
 model:
   provider: gemini
-  name: gemini-2.5-pro
+  name: gemini-3.1-pro-preview
   temperature: 0.1
 output_schema: AgentPlan
 goal: >
@@ -28,8 +28,8 @@ required_context:
   - work_item_comments
 constraints:
   - Suggest status updates when evidence is incomplete or approval is required.
-  - Treat PR metadata as event-provided because the current OpenAPI document has no PR artifact endpoint.
-  - Status updates must use UpdateWorkItemDto.status.
+  - Treat pull request metadata as event-provided context unless hydrated context includes linked PR state.
+  - Status updates must use the selected work item status tool's input contract.
 default_execution_mode: suggest
 approval_policy:
   update_workitem_status: user_approval_required

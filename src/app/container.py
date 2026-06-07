@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from application.action_event_handler import ActionEventHandler
+from application.agent_run_sync import AgentRunSync
 from application.context_provider import ContextProvider
 from application.domain_event_handler import DomainEventHandler
 from application.event_router import EventRouter
@@ -24,7 +25,7 @@ from infrastructure.registries.tool_registry import ToolRegistry
 from infrastructure.registries.workflow_registry import WorkflowRegistry
 from infrastructure.state.base import StateStore
 from infrastructure.state.memory_state_store import MemoryStateStore
-from infrastructure.state.object_storage_state_store import ObjectStorageStateStore
+from infrastructure.state.prism_api_state_store import PrismApiStateStore
 
 
 @dataclass
@@ -42,6 +43,7 @@ class AppContainer:
     validator: Validator
     router: EventRouter
     context_provider: ContextProvider
+    agent_run_sync: AgentRunSync
     domain_event_handler: DomainEventHandler
     action_event_handler: ActionEventHandler
     recursion_runner: RecursionRunner
@@ -50,30 +52,45 @@ class AppContainer:
 def build_container(settings: Settings | None = None) -> AppContainer:
     settings = settings or Settings.from_env()
     queue = _build_queue(settings)
-    state_store = _build_state_store(settings)
     prism_client = PrismApiClient(settings.prism_api_base_url, settings.prism_api_token)
+    state_store = _build_state_store(settings, prism_client)
     prompt_registry = PromptRegistry()
     tool_registry = ToolRegistry.from_prompt_registry(prompt_registry, prism_client=prism_client)
     skill_registry = SkillRegistry.from_prompt_registry(prompt_registry)
     workflow_registry = WorkflowRegistry.from_prompt_registry(prompt_registry)
     model_provider = GeminiModelProvider(settings)
-    agent_factory = PydanticAIAgentFactory(
-        model_provider=model_provider,
-        live_llm_enabled=settings.app_env == "prod" and bool(settings.gemini_api_key),
-    )
+    agent_factory = PydanticAIAgentFactory(model_provider=model_provider)
     planner = Planner(prompt_registry, skill_registry, tool_registry, agent_factory)
     executor = Executor(tool_registry)
     validator = Validator(prism_client)
     router = EventRouter(TriggerPolicy(), workflow_registry)
     context_provider = ContextProvider(prism_client, prompt_registry)
-    domain_event_handler = DomainEventHandler(router, context_provider, planner, state_store, queue)
-    action_event_handler = ActionEventHandler(executor, validator, state_store, queue)
+    agent_run_sync = AgentRunSync(
+        prism_client,
+        enabled=settings.state_backend == "prism_api",
+    )
+    domain_event_handler = DomainEventHandler(
+        router,
+        context_provider,
+        planner,
+        state_store,
+        queue,
+        agent_run_sync,
+    )
+    action_event_handler = ActionEventHandler(
+        executor,
+        validator,
+        state_store,
+        queue,
+        agent_run_sync,
+    )
     recursion_runner = RecursionRunner(
         queue=queue,
         state_store=state_store,
         domain_event_handler=domain_event_handler,
         action_event_handler=action_event_handler,
         max_recursion_depth=settings.max_recursion_depth,
+        agent_run_sync=agent_run_sync,
     )
     return AppContainer(
         settings=settings,
@@ -89,6 +106,7 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         validator=validator,
         router=router,
         context_provider=context_provider,
+        agent_run_sync=agent_run_sync,
         domain_event_handler=domain_event_handler,
         action_event_handler=action_event_handler,
         recursion_runner=recursion_runner,
@@ -101,7 +119,7 @@ def _build_queue(settings: Settings) -> Queue:
     return OCIQueue(settings.oci_queue_ocid, settings.oci_queue_messages_endpoint)
 
 
-def _build_state_store(settings: Settings) -> StateStore:
+def _build_state_store(settings: Settings, prism_client: PrismApiClient) -> StateStore:
     if settings.state_backend == "memory":
         return MemoryStateStore()
-    return ObjectStorageStateStore(settings.oci_namespace, settings.oci_bucket_name)
+    return PrismApiStateStore(prism_client)

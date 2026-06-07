@@ -2,10 +2,10 @@ kind: workflow
 id: feature.provision
 version: 1.0.0
 name: Feature Provisioning
-description: Provisions a requested feature from the hydrated Object Storage payload.
+description: Provisions a requested feature from hydrated feature request context.
 model:
   provider: gemini
-  name: gemini-2.5-pro
+  name: gemini-3.1-pro-preview
   temperature: 0.2
 output_schema: AgentPlan
 goal: >
@@ -22,13 +22,15 @@ required_context:
   - workspace
   - project
   - workspace_members
+  - workspace_jobs
+  - member_workloads
 constraints:
-  - The queue message is a pointer event; never treat it as the source feature payload.
-  - Validate hydrated payload identity before planning.
-  - Use POST /workspaces/{workspaceId}/sprints for sprint creation.
-  - Use POST /projects/{projectId}/work-items for task creation.
-  - Use assigneeUsernames on work item create/update payloads for assignment.
-  - Do not map generated work items into a sprint because the API does not expose a sprint-work-item mapping endpoint yet.
+  - Treat hydrated feature request context as the source of truth.
+  - Validate that feature context belongs to the current workspace and project before planning.
+  - Use selected sprint and work item tools for all Prism state changes.
+  - Assign generated work items only after considering workspace member jobNames, role, and workspace-scoped member_workloads.
+  - Prefer the least-loaded capable teammate by activeItemCount, overdueItemCount, and dueThisWeekItemCount; leave work unassigned when role, job fit, or workload evidence is insufficient.
+  - Do not map generated work items into a sprint unless a selected tool explicitly supports sprint work item mapping.
 default_execution_mode: auto_commit
 approval_policy:
   create_sprint: auto_commit

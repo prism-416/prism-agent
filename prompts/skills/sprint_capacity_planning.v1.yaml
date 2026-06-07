@@ -10,8 +10,8 @@ reasoning_instructions:
   - Prefer a coherent sprint goal over maximizing ticket count.
   - Surface capacity assumptions.
   - Explain why proposed work fits or exceeds capacity.
-  - Use SprintResponseDto fields sprintId, startsAt, endsAt, status, and goal.
-  - Use GET /workspaces/{workspaceId}/sprints/{sprintId}/work-items for sprint scope.
+  - Use hydrated sprint fields such as sprintId, startsAt, endsAt, status, and goal.
+  - Use hydrated sprint work item context for sprint scope.
   - Treat project member jobNames as capability signals, not hard capacity numbers.
 allowed_tools:
   - create_agent_suggestion

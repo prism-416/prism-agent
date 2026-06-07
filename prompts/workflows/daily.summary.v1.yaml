@@ -5,7 +5,7 @@ name: Daily Summary
 description: Creates a daily dashboard insight from material project changes.
 model:
   provider: gemini
-  name: gemini-2.5-pro
+  name: gemini-3.1-pro-preview
   temperature: 0.2
 output_schema: AgentPlan
 goal: >
@@ -28,8 +28,8 @@ required_context:
   - recent_comments
 constraints:
   - Ignore low-value updates and minor field churn.
-  - Do not assume a general activity feed endpoint exists in the current API.
-  - Dashboard insights are runtime artifacts unless an insight endpoint is added.
+  - Summarize only hydrated project, sprint, work item, member, and comment context.
+  - Use the selected dashboard insight or suggestion tool for publishable output.
 default_execution_mode: auto_commit
 approval_policy:
   create_dashboard_insight: auto_commit

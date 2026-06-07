@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from domain.actions import ActionStatus, PlannedAction
 from domain.context import AgentContext
-from domain.plans import AgentPlan
+from domain.plans import AgentPlan, PlanStatus
 from domain.policies import ActionApprovalPolicy, ApprovalMode
 from infrastructure.llm.pydantic_ai_agent_factory import PydanticAIAgentFactory
 from infrastructure.registries.prompt_registry import PromptRegistry
@@ -35,6 +36,7 @@ class Planner:
         context: AgentContext,
         context_snapshot_ref: str,
         workflow: WorkflowDefinition,
+        agent_run_id: str,
     ) -> AgentPlan:
         workflow_prompt = self.prompt_registry.get_workflow(
             workflow.prompt_id,
@@ -48,6 +50,18 @@ class Planner:
         )
         agent = self.agent_factory.create_agent(workflow_prompt, skills, tools)
         plan = agent.generate_plan(context, context_snapshot_ref, approval_policy)
+        plan = self._normalize_plan_for_runtime(
+            plan,
+            context,
+            context_snapshot_ref,
+            agent_run_id,
+            workflow_prompt.id,
+            workflow_prompt.version,
+            workflow_prompt.goal,
+            [skill.id for skill in skills],
+            [tool.name for tool in tools],
+            approval_policy,
+        )
         self._ensure_plan_uses_allowed_tools(plan, set(allowed_tool_names))
         return plan
 
@@ -75,3 +89,50 @@ class Planner:
         if disallowed:
             tools = ", ".join(sorted(disallowed))
             raise ValueError(f"Plan contains tools not allowed by selected skills: {tools}")
+
+    @staticmethod
+    def _normalize_plan_for_runtime(
+        plan: AgentPlan,
+        context: AgentContext,
+        context_snapshot_ref: str,
+        agent_run_id: str,
+        prompt_id: str,
+        prompt_version: str,
+        goal: str,
+        skill_ids: list[str],
+        tool_names: list[str],
+        approval_policy: ActionApprovalPolicy,
+    ) -> AgentPlan:
+        idempotency_prefix = context.source_event.event.idempotency_key or agent_run_id
+        normalized_actions: list[PlannedAction] = []
+        previous_action_id: str | None = None
+        for index, action in enumerate(plan.actions, start=1):
+            normalized_action = action.model_copy(
+                update={
+                    "plan_id": agent_run_id,
+                    "depends_on": [previous_action_id] if previous_action_id else [],
+                    "requires_approval": approval_policy.requires_approval(action.tool_name),
+                    "status": ActionStatus.PENDING,
+                    "idempotency_key": f"{idempotency_prefix}:{action.tool_name}:{index}",
+                    "expected_entity_versions": context.entity_versions,
+                }
+            )
+            normalized_actions.append(normalized_action)
+            previous_action_id = normalized_action.action_id
+
+        return plan.model_copy(
+            update={
+                "plan_id": agent_run_id,
+                "source_event_id": context.source_event.event_id,
+                "workspace_id": context.workspace_id,
+                "project_id": context.project_id,
+                "goal": goal,
+                "prompt_id": prompt_id,
+                "prompt_version": prompt_version,
+                "skill_ids": skill_ids,
+                "tool_names": tool_names,
+                "context_snapshot_ref": context_snapshot_ref,
+                "actions": normalized_actions,
+                "status": PlanStatus.PLANNED,
+            }
+        )

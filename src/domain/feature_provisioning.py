@@ -14,6 +14,7 @@ class FeatureProvisioningPointerEvent(BaseModel):
     type: Literal["feature.provisioning.requested"]
     version: Literal["1.0"]
     request_id: str = Field(alias="requestId")
+    agent_run_id: str | None = Field(default=None, alias="agentRunId")
     payload_id: str | None = Field(default=None, alias="payloadId")
     payload_object_name: str = Field(alias="payloadObjectName")
     payload_version_id: str | None = Field(default=None, alias="payloadVersionId")
@@ -80,6 +81,8 @@ class FeatureProvisioningPayload(BaseModel):
         payload["feature_specification"] = self.feature_specification
         payload["workspace_members"] = self.workspace_members
         payload["queue_pointer"] = pointer.model_dump(by_alias=True, exclude_none=True)
+        if pointer.agent_run_id:
+            payload["agentRunId"] = pointer.agent_run_id
         return DomainEvent(
             event_type=pointer.type,
             workspace_id=pointer.workspace_id,

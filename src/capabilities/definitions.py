@@ -9,7 +9,7 @@ class PromptModelSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     provider: str = "gemini"
-    name: str = "gemini-2.5-pro"
+    name: str = "gemini-3.1-pro-preview"
     temperature: float = 0.2
 
 

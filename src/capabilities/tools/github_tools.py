@@ -18,5 +18,6 @@ class LinkPullRequestTool(BaseAgentTool):
             output={
                 "pr": context.entities.get("pull_request", {}),
                 "itemId": action.input.get("itemId"),
+                "pull_request_id": action.input.get("pull_request_id"),
             },
         )

@@ -13,6 +13,10 @@ dependencies = [
   "PyYAML>=6.0",
 ]
 
+[project.scripts]
+agent-local = "interfaces.test_commands:main"
+agent-test = "interfaces.test_commands:main"
+
 [project.optional-dependencies]
 prod = [
   "oci>=2.125",
@@ -35,6 +39,9 @@ where = ["src"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+markers = [
+  "integration: tests that call external services and are skipped unless explicitly enabled",
+]
 
 [tool.ruff]
 line-length = 100

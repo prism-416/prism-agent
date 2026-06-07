@@ -5,15 +5,11 @@ name: Create Dashboard Insight
 description: Creates a project dashboard insight from agent output.
 usage:
   - Use for daily summaries and material project risk insights.
-  - Use only as a runtime/internal artifact until Prism exposes a dashboard insight API.
+  - Use when the workflow should publish or record a concise project insight.
 do_not_use:
   - Do not use for every minor project event.
 risk_level: low
 approval_policy: auto_commit
-api:
-  status: runtime_internal
-  current_openapi_endpoint: none
-  recommended_endpoint: POST /projects/{projectId}/dashboard-insights
 input_contract:
   projectId: string
   title: string

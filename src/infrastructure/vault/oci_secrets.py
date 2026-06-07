@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import base64
-import os
 from typing import Any
+
+from infrastructure.oci_auth import load_oci_config_and_signer
 
 
 def fetch_secret_text(secret_ocid: str) -> str:
@@ -18,10 +19,10 @@ def build_secrets_client() -> Any:
     except ImportError as exc:
         raise RuntimeError("Install the prod extra to use OCI Vault secrets.") from exc
 
-    if os.getenv("OCI_RESOURCE_PRINCIPAL_VERSION"):
-        signer = oci.auth.signers.get_resource_principals_signer()
-        return oci.secrets.SecretsClient(config={}, signer=signer)
-    return oci.secrets.SecretsClient(oci.config.from_file())
+    config, signer = load_oci_config_and_signer("OCI Vault secrets")
+    if signer is not None:
+        return oci.secrets.SecretsClient(config=config, signer=signer)
+    return oci.secrets.SecretsClient(config)
 
 
 def _secret_bundle_content(secret_bundle: Any) -> str:

@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from application.agent_run_sync import AgentRunSync
 from application.context_provider import ContextProvider
 from application.event_router import EventRouter
 from application.planner import Planner
-from domain.events import AgentActionEvent, EventEnvelope
+from application.trace_data import action_trace_data, event_trace_data, plan_trace_data
+from domain.agent_run import resolve_agent_run_id
+from domain.events import AgentActionEvent, EventEnvelope, utc_now
+from domain.plans import PlanStatus
 from domain.results import TraceEvent
 from infrastructure.queue.base import Queue
 from infrastructure.state.base import StateStore
@@ -17,12 +21,14 @@ class DomainEventHandler:
         planner: Planner,
         state_store: StateStore,
         queue: Queue,
+        agent_run_sync: AgentRunSync,
     ) -> None:
         self.router = router
         self.context_provider = context_provider
         self.planner = planner
         self.state_store = state_store
         self.queue = queue
+        self.agent_run_sync = agent_run_sync
 
     def handle(self, envelope: EventEnvelope) -> None:
         route = self.router.route(envelope)
@@ -31,30 +37,125 @@ class DomainEventHandler:
                 envelope,
                 "event.ignored",
                 f"Ignored event: {route.decision.reason}",
-                {"trigger_key": route.decision.trigger_key},
+                {
+                    **event_trace_data(envelope.event),
+                    "trigger_key": route.decision.trigger_key,
+                    "reason": route.decision.reason,
+                },
             )
             return
 
         snapshot = self.context_provider.hydrate(envelope, route.workflow)
-        plan = self.planner.create_plan(snapshot.context, snapshot.ref, route.workflow)
-        snapshot = snapshot.model_copy(update={"plan_id": plan.plan_id})
-        self.state_store.save_context_snapshot(snapshot)
-        self.state_store.save_plan(plan)
-        self._trace(
-            envelope,
-            "plan.created",
-            f"Created plan {plan.plan_id} for workflow {route.workflow.workflow_id}",
-            {"action_count": len(plan.actions), "prompt_id": plan.prompt_id},
-            plan_id=plan.plan_id,
+        agent_run_id = resolve_agent_run_id(snapshot.context)
+        existing_plan = self.state_store.get_plan(snapshot.context.workspace_id, agent_run_id)
+        should_replan = (
+            existing_plan is not None
+            and existing_plan.status == PlanStatus.REPLAN_REQUIRED
+            and _replan_requested(envelope)
         )
+        if existing_plan is not None and not should_replan:
+            plan = existing_plan
+            snapshot = snapshot.model_copy(update={"plan_id": plan.plan_id})
+            self.state_store.save_context_snapshot(snapshot)
+            self._trace(
+                envelope,
+                "plan.resumed",
+                f"Resumed plan {plan.plan_id} for workflow {route.workflow.workflow_id}",
+                plan_trace_data(plan, snapshot, route.workflow),
+                plan_id=plan.plan_id,
+            )
+        else:
+            if should_replan:
+                self.agent_run_sync.record_run_running(snapshot.context.workspace_id, agent_run_id)
+                self._trace(
+                    envelope,
+                    "plan.replanning",
+                    f"Replanning run {agent_run_id} for workflow {route.workflow.workflow_id}",
+                    {
+                        **event_trace_data(envelope.event),
+                        "previous_plan_status": existing_plan.status.value
+                        if existing_plan is not None
+                        else None,
+                    },
+                    plan_id=agent_run_id,
+                )
+            else:
+                self.agent_run_sync.record_run_started(
+                    snapshot.context,
+                    agent_run_id,
+                    objective=route.workflow.goal,
+                    prompt_version=route.workflow.prompt_version,
+                )
+            try:
+                plan = self.planner.create_plan(
+                    snapshot.context,
+                    snapshot.ref,
+                    route.workflow,
+                    agent_run_id,
+                )
+            except Exception as exc:
+                self.agent_run_sync.record_run_failed(
+                    snapshot.context.workspace_id,
+                    agent_run_id,
+                    str(exc),
+                )
+                raise
+            snapshot = snapshot.model_copy(update={"plan_id": plan.plan_id})
+            self.state_store.save_context_snapshot(snapshot)
+            self.state_store.save_plan(plan)
+            self.agent_run_sync.record_plan_created(plan, snapshot.context)
+            self._trace(
+                envelope,
+                "plan.replanned" if should_replan else "plan.created",
+                (
+                    f"Replanned run {plan.plan_id} for workflow {route.workflow.workflow_id}"
+                    if should_replan
+                    else f"Created plan {plan.plan_id} for workflow {route.workflow.workflow_id}"
+                ),
+                plan_trace_data(plan, snapshot, route.workflow),
+                plan_id=plan.plan_id,
+            )
 
         first_action = plan.next_pending_action()
         if first_action is None:
+            if plan.status in {
+                PlanStatus.COMPLETED,
+                PlanStatus.FAILED,
+                PlanStatus.CANCELLED,
+                PlanStatus.WAITING_FOR_APPROVAL,
+                PlanStatus.REPLAN_REQUIRED,
+            }:
+                self._trace(
+                    envelope,
+                    "plan.no_pending_actions",
+                    f"Plan {plan.plan_id} has no executable actions in status {plan.status.value}.",
+                    plan_trace_data(plan, snapshot, route.workflow),
+                    plan_id=plan.plan_id,
+                )
+                return
+            failure_message = "Planner produced no executable actions after retry attempts."
+            failed_plan = plan.model_copy(
+                update={"status": PlanStatus.FAILED, "updated_at": utc_now()}
+            )
+            self.state_store.update_plan(failed_plan)
+            self.agent_run_sync.record_run_failed(
+                failed_plan.workspace_id,
+                failed_plan.plan_id,
+                failure_message,
+            )
             self._trace(
                 envelope,
                 "plan.empty",
                 "Planner produced no executable actions.",
-                plan_id=plan.plan_id,
+                plan_trace_data(failed_plan, snapshot, route.workflow),
+                plan_id=failed_plan.plan_id,
+            )
+            self._trace(
+                envelope,
+                "plan.failed",
+                failure_message,
+                plan_trace_data(failed_plan, snapshot, route.workflow),
+                plan_id=failed_plan.plan_id,
             )
             return
 
@@ -71,7 +172,13 @@ class DomainEventHandler:
             envelope,
             "action.enqueued",
             f"Enqueued first action {first_action.action_id}",
-            {"tool_name": first_action.tool_name},
+            action_trace_data(
+                first_action,
+                {
+                    "queue_event_id": action_event.event_id,
+                    "queue_event_type": action_event.event_type,
+                },
+            ),
             plan_id=plan.plan_id,
             action_id=first_action.action_id,
         )
@@ -96,3 +203,7 @@ class DomainEventHandler:
                 data=data or {},
             )
         )
+
+
+def _replan_requested(envelope: EventEnvelope) -> bool:
+    return isinstance(envelope.event.payload.get("_agent_replan"), dict)

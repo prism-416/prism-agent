@@ -24,11 +24,12 @@ class CreateAgentSuggestionTool(BaseAgentTool):
             target_entity_ref=action.input.get("target_entity_ref"),
             proposed_changes=action.input.get("proposed_changes", {}),
         )
+        output = {"suggestion_id": suggestion.suggestion_id}
         event = DomainEvent(
             event_type="agent_suggestion.created",
             workspace_id=context.workspace_id,
             project_id=context.project_id,
-            payload={"suggestion_id": suggestion.suggestion_id},
+            payload=output,
             causality=context.source_event.event.causality.child(context.source_event.event_id),
         )
         return ToolResult(
@@ -36,7 +37,7 @@ class CreateAgentSuggestionTool(BaseAgentTool):
             action_id=action.action_id,
             tool_name=self.name,
             success=True,
-            output={"suggestion_id": suggestion.suggestion_id},
+            output=output,
             emitted_events=[EventEnvelope.wrap(event)],
             suggestion=suggestion,
         )

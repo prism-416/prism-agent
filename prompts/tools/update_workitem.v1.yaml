@@ -5,31 +5,25 @@ name: Update Work Item
 description: Updates an existing Prism work item after stale-context and approval checks.
 usage:
   - Use for approved backlog refinement, priority changes, status changes, parent changes, labels, or assignees.
-  - Updates through PATCH /projects/{projectId}/work-items/{itemId} using UpdateWorkItemDto.
-  - Use usernames, not user IDs, for assigneeUsernames.
+  - Use when a concrete work item edit is ready to apply or ready to propose for approval.
+  - Use assigneeUsernames only after selecting teammates from hydrated member username, role, jobNames, and workspace-scoped member_workloads evidence.
+  - Leave assigneeUsernames unchanged when capability or workload evidence is insufficient.
 do_not_use:
   - Do not use for speculative edits.
   - Do not use when expected entity versions are stale.
-  - Do not send fields outside UpdateWorkItemDto.
+  - Do not include fields outside this tool's input contract.
 risk_level: high
 approval_policy: user_approval_required
-api:
-  method: PATCH
-  path: /projects/{projectId}/work-items/{itemId}
-  request_schema: UpdateWorkItemDto
-  response_schema: WorkItemResponseDto
-  response_wrapper: data
 input_contract:
   projectId: string
   itemId: string
-  parentId: optional uuid or null
-  title: optional string
-  description: optional string
-  priority: optional low | medium | high | urgent
-  status: optional todo | in_progress | in_review | done | archived
-  assigneeUsernames: optional unique username list
-  labelNames: optional unique label list
-constraints:
-  title_max_length: 100
-  assignee_username_max_length: 30
-  label_name_max_length: 30
+  changes:
+    parentId: optional uuid or null
+    title: optional string
+    description: optional string
+    startDate: optional date or null
+    dueDate: optional date or null
+    priority: optional low | medium | high | urgent
+    status: optional todo | in_progress | in_review | done | archived
+    assigneeUsernames: optional unique username list
+    labelNames: optional unique label list

@@ -5,7 +5,7 @@ name: Epic Refinement
 description: Runs when an epic needs clearer scope, story candidates, or risk review.
 model:
   provider: gemini
-  name: gemini-2.5-pro
+  name: gemini-3.1-pro-preview
   temperature: 0.2
 output_schema: AgentPlan
 goal: >
@@ -29,8 +29,8 @@ required_context:
   - sibling_work_items
 constraints:
   - Suggest changes for user review instead of directly editing epic content.
-  - Treat work_item as a WorkItemResponseDto epic unless the event says otherwise.
-  - Proposed edits must fit UpdateWorkItemDto.
+  - Treat work_item as the source epic unless the event says otherwise.
+  - Keep proposed edits within the selected work item tools' input contracts.
 default_execution_mode: suggest
 approval_policy: {}
 max_recursion_depth: 10
