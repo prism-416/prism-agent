@@ -2,19 +2,15 @@ kind: tool
 id: link_pull_request
 version: 1.0.0
 name: Link Pull Request
-description: Links a pull request to a Prism work item.
+description: Records a proposed pull request relationship for a Prism work item.
 usage:
   - Use when PR metadata provides a clear work item relationship.
-  - Use only with PR metadata from the triggering event or a future linked-artifact API.
+  - Use only with PR metadata from the triggering event or hydrated context.
 do_not_use:
   - Do not use for speculative links.
-  - Do not use if no API-backed or event-backed PR identity is available.
+  - Do not use if no event-backed or context-backed PR identity is available.
 risk_level: medium
 approval_policy: user_approval_required
-api:
-  status: missing_endpoint
-  current_openapi_endpoint: none
-  recommended_endpoint: POST /projects/{projectId}/work-items/{itemId}/linked-artifacts
 input_contract:
   projectId: string
   itemId: string

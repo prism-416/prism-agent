@@ -18,7 +18,7 @@ allowed_tools:
   - create_dashboard_insight
 guardrails:
   evidence_required: true
-  avoid_api_unsupported_claims: true
+  avoid_unsupported_claims: true
 quality_expectations:
   - Risks are actionable and tied to project state.
-  - Risk output names the API resource that supports the observation.
+  - Risk output names the source context or evidence that supports the observation.

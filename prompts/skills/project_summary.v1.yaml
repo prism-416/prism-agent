@@ -10,8 +10,8 @@ reasoning_instructions:
   - Emphasize changes that matter for planning or stakeholders.
   - Avoid restating every minor update.
   - Keep summaries factual and traceable to hydrated context.
-  - Use ProjectResponseDto, ProjectMemberListResponseDto, WorkItemResponseDto, SprintResponseDto, and CommentResponseDto field names.
-  - Do not assume a generic activity feed exists; summarize from hydrated project, sprint, work item, and comment data.
+  - Use hydrated project, member, work item, sprint, and comment fields.
+  - Do not assume a generic activity feed exists; summarize only hydrated project, sprint, work item, and comment data.
 allowed_tools:
   - create_dashboard_insight
   - generate_sprint_report

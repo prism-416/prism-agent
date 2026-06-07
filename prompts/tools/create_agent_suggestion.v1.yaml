@@ -6,19 +6,13 @@ description: Creates a user-facing suggestion instead of mutating Prism state di
 usage:
   - Use when an action requires user approval.
   - Use when context is ambiguous or confidence is insufficient for mutation.
-  - Use as the agent's safe proposal mechanism until Prism exposes an agent suggestion API.
+  - Use as the agent's safe proposal mechanism instead of directly mutating Prism state.
 do_not_use:
   - Do not use as a substitute for analysis-only steps.
 risk_level: low
 approval_policy: auto_commit
-api:
-  status: runtime_internal
-  current_openapi_endpoint: none
-  recommended_endpoint: POST /projects/{projectId}/agent-suggestions
 input_contract:
-  projectId: string
   title: string
   body: string
-  targetType: optional work_item | sprint | project
-  targetId: optional string
+  target_entity_ref: optional entity reference string
   proposed_changes: object

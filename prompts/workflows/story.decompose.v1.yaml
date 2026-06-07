@@ -5,12 +5,12 @@ name: Story Decomposition
 description: Runs when a story needs breakdown into implementation-ready work.
 model:
   provider: gemini
-  name: gemini-2.5-pro
+  name: gemini-3.1-pro-preview
   temperature: 0.2
 output_schema: AgentPlan
 goal: >
   Break down a product story into implementation-ready tasks while preserving user approval
-  for any Prism state mutation and matching the Project Work Item API contract.
+  for any Prism state mutation.
 system: |
   You are Prism's AI project manager acting as an authenticated teammate in the workspace.
   Use the selected skills and their tool permissions only.
@@ -28,6 +28,7 @@ required_context:
   - project
   - project_members
   - project_jobs
+  - member_workloads
   - work_item
   - parent_work_item
   - sibling_work_items
@@ -36,9 +37,10 @@ required_context:
 constraints:
   - Produce a structured AgentPlan before any action execution.
   - Prefer suggestions when ambiguity or approval requirements exist.
-  - Treat work_item as a WorkItemResponseDto story unless the event says otherwise.
-  - Create implementation tasks with parentId set to the story itemId.
-  - Use assigneeUsernames and labelNames rather than user IDs or label IDs.
+  - Treat work_item as the source story unless the event says otherwise.
+  - Create implementation tasks as children of the source story when using work item tools.
+  - Assign generated tasks only after considering member jobNames, role, and workspace-scoped member_workloads.
+  - Use stable usernames from hydrated context for assigneeUsernames; leave tasks unassigned when fit or workload evidence is weak.
 default_execution_mode: suggest
 approval_policy:
   create_workitem: user_approval_required

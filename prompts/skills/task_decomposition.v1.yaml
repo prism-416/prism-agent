@@ -10,10 +10,11 @@ reasoning_instructions:
   - Preserve product intent and avoid inventing scope.
   - Avoid duplicate work items and overly small micro-tasks.
   - Prefer suggestion mode when task creation requires approval.
-  - Create child tasks with parentId set to the story itemId.
-  - Keep titles within the API's 100 character WorkItem title limit.
-  - Put acceptance criteria inside the description text because CreateWorkItemForInternalDto has no separate acceptance criteria field.
-  - Use assigneeUsernames from project members when assigning teammates.
+  - Create child tasks under the source story when using work item tools.
+  - Keep task titles concise.
+  - Put acceptance criteria inside the task description.
+  - Assign teammates only when hydrated member context provides a username, relevant jobNames, and acceptable workspace workload.
+  - Use member_workloads activeItemCount, overdueItemCount, and dueThisWeekItemCount as current load evidence; if workload is missing or unavailable, be conservative and leave ambiguous tasks unassigned.
 allowed_tools:
   - find_duplicate_workitems
   - create_agent_suggestion
@@ -30,4 +31,5 @@ guardrails:
 quality_expectations:
   - Each proposed task has a clear outcome.
   - Acceptance criteria are concrete enough for implementation and review.
-  - Suggested task payloads conform to CreateWorkItemForInternalDto fields when executed as mutations.
+  - Assigned tasks include a defensible role and workload match in the action instruction.
+  - Suggested task payloads conform to the selected work item tool contract.

@@ -5,7 +5,7 @@ name: Sprint Risk Check
 description: Reviews current sprint state for material delivery and dependency risk.
 model:
   provider: gemini
-  name: gemini-2.5-pro
+  name: gemini-3.1-pro-preview
   temperature: 0.1
 output_schema: AgentPlan
 goal: >
@@ -29,8 +29,8 @@ required_context:
   - recent_comments
 constraints:
   - Explain evidence for each material risk.
-  - Use SprintResponseDto and WorkItemResponseDto field names in reasoning.
-  - Do not assume an activity feed endpoint exists.
+  - Use sprint, work item, member, job, and comment fields from hydrated context.
+  - Do not invent activity or telemetry that is not present in context.
 default_execution_mode: suggest
 approval_policy: {}
 max_recursion_depth: 10

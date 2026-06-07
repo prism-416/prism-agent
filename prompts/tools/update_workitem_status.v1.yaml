@@ -5,22 +5,13 @@ name: Update Work Item Status
 description: Updates work item status when completion policy and validation allow it.
 usage:
   - Use after PR status sync determines a status update is policy-supported.
-  - Implement as PATCH /projects/{projectId}/work-items/internal/{itemId} with UpdateWorkItemForInternalDto.status.
-  - Include requestedByUserId from the feature-provisioning queue pointer when available.
   - Valid statuses are todo, in_progress, in_review, done, and archived.
 do_not_use:
   - Do not use from PR merge evidence alone unless policy permits it.
   - Do not use when the linked work item is stale.
 risk_level: high
 approval_policy: user_approval_required
-api:
-  method: PATCH
-  path: /projects/{projectId}/work-items/internal/{itemId}
-  request_schema: UpdateWorkItemForInternalDto
-  response_schema: WorkItemResponseDto
-  response_wrapper: data
 input_contract:
   projectId: string
   itemId: string
   status: todo | in_progress | in_review | done | archived
-  requestedByUserId: optional uuid
