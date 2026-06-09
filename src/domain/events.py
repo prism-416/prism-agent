@@ -65,8 +65,28 @@ class AgentActionEvent(BaseRuntimeEvent):
     action_id: str
 
 
+class SubAgentTaskEvent(BaseRuntimeEvent):
+    kind: Literal["subagent_task"] = "subagent_task"
+    event_type: str = "agent.subagent.requested"
+    plan_id: str
+    node_id: str
+
+
+class SubAgentCompletedEvent(BaseRuntimeEvent):
+    kind: Literal["subagent_completed"] = "subagent_completed"
+    event_type: str = "agent.subagent.completed"
+    plan_id: str
+    node_id: str
+    status: str = "completed"
+
+
 RuntimeEvent = Annotated[
-    DomainEvent | ScheduledEvent | ManualInvocationEvent | AgentActionEvent,
+    DomainEvent
+    | ScheduledEvent
+    | ManualInvocationEvent
+    | AgentActionEvent
+    | SubAgentTaskEvent
+    | SubAgentCompletedEvent,
     Field(discriminator="kind"),
 ]
 

@@ -15,6 +15,7 @@ class Settings(BaseModel):
     llm_provider: Literal["gemini"] = "gemini"
     gemini_api_key: str | None = None
     default_gemini_model: str = "gemini-3.1-pro-preview"
+    gemini_flash_model: str = "gemini-2.5-flash"
     max_recursion_depth: int = Field(default=10, ge=1)
     oci_queue_ocid: str | None = None
     oci_queue_messages_endpoint: str | None = None
@@ -32,6 +33,7 @@ class Settings(BaseModel):
             llm_provider=os.getenv("LLM_PROVIDER", "gemini"),
             gemini_api_key=os.getenv("GEMINI_API_KEY") or None,
             default_gemini_model=os.getenv("DEFAULT_GEMINI_MODEL", "gemini-3.1-pro-preview"),
+            gemini_flash_model=os.getenv("GEMINI_FLASH_MODEL", "gemini-2.5-flash"),
             max_recursion_depth=int(os.getenv("MAX_RECURSION_DEPTH", "10")),
             oci_queue_ocid=os.getenv("OCI_QUEUE_OCID"),
             oci_queue_messages_endpoint=os.getenv("OCI_QUEUE_MESSAGES_ENDPOINT") or None,

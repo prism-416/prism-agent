@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from domain.context import ContextSnapshot
 from domain.plans import AgentPlan
 from domain.results import ToolResult, TraceEvent
+from domain.subtasks import SubAgentResult, SubTask, SubTaskStatus, TaskGraph, TaskGraphAdvance
 
 
 class StateStore(ABC):
@@ -14,6 +15,38 @@ class StateStore(ABC):
 
     @abstractmethod
     def get_plan(self, workspace_id: str, plan_id: str) -> AgentPlan | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def save_task_graph(self, graph: TaskGraph) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_task_graph(self, workspace_id: str, plan_id: str) -> TaskGraph | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def save_sub_agent_result(self, workspace_id: str, run_id: str, result: SubAgentResult) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_sub_agent_results(self, workspace_id: str, run_id: str) -> list[SubAgentResult]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def claim_ready_nodes(self, workspace_id: str, run_id: str) -> list[SubTask]:
+        """Atomically claim all runnable nodes (PENDING -> RUNNING) and return them."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def advance_task_graph(
+        self, workspace_id: str, run_id: str, node_id: str, status: SubTaskStatus
+    ) -> TaskGraphAdvance | None:
+        """Atomically record a node's terminal status and return what happens next.
+
+        Returns None when the run's task graph is missing. Must be idempotent so
+        duplicate completion events cannot double-advance the graph.
+        """
         raise NotImplementedError
 
     @abstractmethod

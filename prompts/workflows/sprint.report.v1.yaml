@@ -31,4 +31,27 @@ constraints:
   - Use the selected sprint report or suggestion tool for publishable output.
 default_execution_mode: suggest
 approval_policy: {}
-max_recursion_depth: 10
+max_recursion_depth: 20
+orchestration:
+  mode: hybrid
+  default_graph:
+    - node: summary
+      skill: project_summary
+      context_scope:
+        - workspace
+        - project
+        - sprint
+        - sprint_work_items
+        - project_members
+    - node: risk
+      skill: risk_detection
+      context_scope:
+        - sprint
+        - sprint_work_items
+        - comments
+  synthesizer:
+    skill: project_summary
+    context_scope:
+      - subagent_results
+      - sprint
+      - project

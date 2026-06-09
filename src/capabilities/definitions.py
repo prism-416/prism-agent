@@ -22,6 +22,32 @@ class BasePromptDefinition(BaseModel):
     description: str
 
 
+class OrchestrationNodeDef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    node: str = ""
+    skill: str | None = None
+    skills: list[str] = Field(default_factory=list)
+    objective: str = ""
+    context_scope: list[str] = Field(default_factory=list)
+    depends_on: list[str] = Field(default_factory=list)
+    model_tier: str | None = None
+
+    def skill_ids(self) -> list[str]:
+        ids = list(self.skills)
+        if self.skill and self.skill not in ids:
+            ids.insert(0, self.skill)
+        return ids
+
+
+class OrchestrationDef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["hybrid", "static", "dynamic"] = "static"
+    default_graph: list[OrchestrationNodeDef] = Field(default_factory=list)
+    synthesizer: OrchestrationNodeDef | None = None
+
+
 class WorkflowPromptDefinition(BasePromptDefinition):
     kind: Literal["workflow"] = "workflow"
     model: PromptModelSettings = Field(default_factory=PromptModelSettings)
@@ -35,6 +61,7 @@ class WorkflowPromptDefinition(BasePromptDefinition):
     default_execution_mode: str = "suggest"
     approval_policy: dict[str, str] = Field(default_factory=dict)
     max_recursion_depth: int = 10
+    orchestration: OrchestrationDef | None = None
 
 
 class SkillPromptDefinition(BasePromptDefinition):
@@ -44,6 +71,7 @@ class SkillPromptDefinition(BasePromptDefinition):
     allowed_tools: list[str] = Field(default_factory=list)
     guardrails: dict[str, Any] = Field(default_factory=dict)
     quality_expectations: list[str] = Field(default_factory=list)
+    model_tier: str = "pro"
 
 
 class ToolPromptDefinition(BasePromptDefinition):

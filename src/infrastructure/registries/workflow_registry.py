@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from capabilities.definitions import WorkflowPromptDefinition
+from capabilities.definitions import OrchestrationDef, WorkflowPromptDefinition
 from infrastructure.registries.prompt_registry import PromptRegistry
 
 
@@ -18,6 +18,7 @@ class WorkflowDefinition(BaseModel):
     default_execution_mode: str = "suggest"
     approval_policy: dict[str, str] = Field(default_factory=dict)
     max_recursion_depth: int = 10
+    orchestration: OrchestrationDef | None = None
 
     @property
     def workflow_id(self) -> str:
@@ -52,6 +53,7 @@ class WorkflowRegistry:
             default_execution_mode=prompt.default_execution_mode,
             approval_policy=prompt.approval_policy,
             max_recursion_depth=prompt.max_recursion_depth,
+            orchestration=prompt.orchestration,
         )
 
     def register(self, workflow: WorkflowDefinition) -> None:

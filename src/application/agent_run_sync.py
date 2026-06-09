@@ -52,7 +52,7 @@ class AgentRunSync:
         _ = context
         self.prism_client.upsert_agent_run_step(
             plan.workspace_id,
-            plan.plan_id,
+            _api_run_id(plan),
             {
                 "stepId": stable_agent_run_uuid(plan.plan_id, "plan"),
                 "stepOrder": 0,
@@ -121,7 +121,7 @@ class AgentRunSync:
             step_payload["errorMessage"] = message[:5000]
         self.prism_client.upsert_agent_run_step(
             plan.workspace_id,
-            plan.plan_id,
+            _api_run_id(plan),
             step_payload,
         )
         self._upsert_action(
@@ -139,18 +139,26 @@ class AgentRunSync:
                     "message": message[:5000],
                 },
             )
+        # A sub-plan never finalizes the shared run; the orchestration coordinator
+        # owns run completion once every node (and the synthesizer) is done.
+        run_status = "running" if plan.is_subplan else run_status_to_api(plan)
         self.prism_client.update_agent_run_status(
             plan.workspace_id,
-            plan.plan_id,
-            {"status": run_status_to_api(plan)},
+            _api_run_id(plan),
+            {"status": run_status},
         )
 
     def record_run_completed(self, plan: AgentPlan) -> None:
         if not self.enabled:
             return
+        self.record_run_completed_by_id(plan.workspace_id, _api_run_id(plan))
+
+    def record_run_completed_by_id(self, workspace_id: str, run_id: str) -> None:
+        if not self.enabled:
+            return
         self.prism_client.update_agent_run_status(
-            plan.workspace_id,
-            plan.plan_id,
+            workspace_id,
+            run_id,
             {"status": "completed"},
         )
 
@@ -183,9 +191,14 @@ class AgentRunSync:
 
         self.prism_client.upsert_agent_action(
             plan.workspace_id,
-            plan.plan_id,
+            _api_run_id(plan),
             payload,
         )
+
+
+def _api_run_id(plan: AgentPlan) -> str:
+    """The Prism agent-run id for a plan. Sub-plans report under their parent run."""
+    return plan.parent_run_id or plan.plan_id
 
 
 def _agent_run_create_payload(
