@@ -30,10 +30,15 @@ jobs:
       OCI_AUTH_TOKEN: ${{ secrets.OCI_AUTH_TOKEN }}
       OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
       OCI_FUNCTION_APPLICATION_OCID: ${{ secrets.OCI_FUNCTION_APPLICATION_OCID }}
+
+      OCIR_REGION_KEY: ${{ vars.OCIR_REGION_KEY || 'icn' }}
+      OCIR_NAMESPACE: ${{ vars.OCIR_NAMESPACE || 'axid81m9t8ng' }}
+      OCIR_USERNAME: ${{ secrets.OCIR_USERNAME }}
+      OCIR_REPOSITORY_NAME: ${{ vars.OCIR_REPOSITORY_NAME || 'prism-agent' }}
+
       FUNCTION_DISPLAY_NAME: ${{ vars.OCI_FUNCTION_NAME || 'prism-agent-dev' }}
       FUNCTION_MEMORY_MB: ${{ vars.OCI_FUNCTION_MEMORY_MB || '512' }}
       FUNCTION_TIMEOUT_SECONDS: ${{ vars.OCI_FUNCTION_TIMEOUT_SECONDS || '300' }}
-      OCIR_REPOSITORY_NAME: ${{ vars.OCIR_REPOSITORY_NAME || 'prism-agent' }}
       OCI_FUNCTION_PLATFORM: ${{ vars.OCI_FUNCTION_PLATFORM || 'linux/amd64' }}
 
     steps:
@@ -56,6 +61,9 @@ jobs:
             OCI_AUTH_TOKEN
             OCI_COMPARTMENT_OCID
             OCI_FUNCTION_APPLICATION_OCID
+            OCIR_REGION_KEY
+            OCIR_NAMESPACE
+            OCIR_USERNAME
           )
 
           missing=()
@@ -89,7 +97,7 @@ jobs:
       - name: Install OCI CLI
         run: python -m pip install oci-cli
 
-      - name: Debug OCI identity
+      - name: Debug OCI / OCIR config
         shell: bash
         run: |
           set -euo pipefail
@@ -97,20 +105,21 @@ jobs:
           echo "OCI region:"
           echo "$OCI_CLI_REGION"
 
-          echo "Object Storage / OCIR namespace:"
+          echo "OCIR registry:"
+          echo "${OCIR_REGION_KEY}.ocir.io"
+
+          echo "Expected namespace:"
+          echo "$OCIR_NAMESPACE"
+
+          echo "Actual namespace from OCI:"
           oci os ns get --query 'data' --raw-output
 
-          echo "OCI CLI user name:"
-          oci iam user get \
-            --user-id "$OCI_CLI_USER" \
-            --query 'data.name' \
-            --raw-output
-
-          echo "Tenancy name:"
-          oci iam tenancy get \
-            --tenancy-id "$OCI_CLI_TENANCY" \
-            --query 'data.name' \
-            --raw-output
+          echo "OCIR username configured:"
+          if [ -n "${OCIR_USERNAME:-}" ]; then
+            echo "yes"
+          else
+            echo "no"
+          fi
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -127,13 +136,18 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "OCIR repository path:"
+          echo "OCIR repository path from oracle action:"
           echo "${{ steps.ocir.outputs.repo_path }}"
 
+          echo "Expected image prefix:"
+          echo "${OCIR_REGION_KEY}.ocir.io/${OCIR_NAMESPACE}/${OCIR_REPOSITORY_NAME}"
+
       - name: Log in to OCIR
-        uses: oracle-actions/login-ocir@v1.3.0
+        uses: docker/login-action@v4
         with:
-          auth_token: ${{ secrets.OCI_AUTH_TOKEN }}
+          registry: ${{ env.OCIR_REGION_KEY }}.ocir.io
+          username: ${{ env.OCIR_USERNAME }}
+          password: ${{ secrets.OCI_AUTH_TOKEN }}
 
       - name: Build and push function image
         id: image
@@ -142,8 +156,9 @@ jobs:
           set -euo pipefail
 
           SHORT_SHA="${GITHUB_SHA::12}"
-          IMAGE_SHA="${{ steps.ocir.outputs.repo_path }}:dev-${SHORT_SHA}"
-          IMAGE_DEV="${{ steps.ocir.outputs.repo_path }}:dev"
+
+          IMAGE_SHA="${OCIR_REGION_KEY}.ocir.io/${OCIR_NAMESPACE}/${OCIR_REPOSITORY_NAME}:dev-${SHORT_SHA}"
+          IMAGE_DEV="${OCIR_REGION_KEY}.ocir.io/${OCIR_NAMESPACE}/${OCIR_REPOSITORY_NAME}:dev"
 
           docker buildx build \
             --platform "$OCI_FUNCTION_PLATFORM" \
