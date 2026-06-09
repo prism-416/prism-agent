@@ -46,6 +46,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           REQUIRED_ENV=(
             OCI_CLI_USER
             OCI_CLI_TENANCY
@@ -56,17 +57,20 @@ jobs:
             OCI_COMPARTMENT_OCID
             OCI_FUNCTION_APPLICATION_OCID
           )
+
           missing=()
           for name in "${REQUIRED_ENV[@]}"; do
             if [ -z "${!name:-}" ]; then
               missing+=("$name")
             fi
           done
+
           if [ "${#missing[@]}" -gt 0 ]; then
             printf 'Missing required deployment inputs:\n' >&2
             printf '  %s\n' "${missing[@]}" >&2
             exit 1
           fi
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -76,12 +80,37 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
+
       - name: Run lint and tests
         run: |
           pre-commit run --all-files
           python -m pytest -p no:cacheprovider
+
       - name: Install OCI CLI
         run: python -m pip install oci-cli
+
+      - name: Debug OCI identity
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "OCI region:"
+          echo "$OCI_CLI_REGION"
+
+          echo "Object Storage / OCIR namespace:"
+          oci os ns get --query 'data' --raw-output
+
+          echo "OCI CLI user name:"
+          oci iam user get \
+            --user-id "$OCI_CLI_USER" \
+            --query 'data.name' \
+            --raw-output
+
+          echo "Tenancy name:"
+          oci iam tenancy get \
+            --tenancy-id "$OCI_CLI_TENANCY" \
+            --query 'data.name' \
+            --raw-output
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -93,6 +122,14 @@ jobs:
           name: ${{ env.OCIR_REPOSITORY_NAME }}
           compartment: ${{ env.OCI_COMPARTMENT_OCID }}
 
+      - name: Debug OCIR repository
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "OCIR repository path:"
+          echo "${{ steps.ocir.outputs.repo_path }}"
+
       - name: Log in to OCIR
         uses: oracle-actions/login-ocir@v1.3.0
         with:
@@ -103,9 +140,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           SHORT_SHA="${GITHUB_SHA::12}"
           IMAGE_SHA="${{ steps.ocir.outputs.repo_path }}:dev-${SHORT_SHA}"
           IMAGE_DEV="${{ steps.ocir.outputs.repo_path }}:dev"
+
           docker buildx build \
             --platform "$OCI_FUNCTION_PLATFORM" \
             -f Dockerfile.oci \
@@ -113,18 +152,23 @@ jobs:
             -t "$IMAGE_DEV" \
             --push \
             .
+
           echo "image=$IMAGE_SHA" >> "$GITHUB_OUTPUT"
+
       - name: Create or update OCI function
         shell: bash
         run: |
           set -euo pipefail
+
           FUNCTION_ID="$(oci fn function list \
             --application-id "$OCI_FUNCTION_APPLICATION_OCID" \
             --display-name "$FUNCTION_DISPLAY_NAME" \
             --query 'data[0].id' \
             --raw-output || true)"
+
           if [ -z "$FUNCTION_ID" ] || [ "$FUNCTION_ID" = "null" ]; then
             echo "Creating OCI function: $FUNCTION_DISPLAY_NAME"
+
             oci fn function create \
               --application-id "$OCI_FUNCTION_APPLICATION_OCID" \
               --display-name "$FUNCTION_DISPLAY_NAME" \
@@ -134,6 +178,7 @@ jobs:
               --wait-for-state ACTIVE
           else
             echo "Updating OCI function: $FUNCTION_DISPLAY_NAME ($FUNCTION_ID)"
+
             oci fn function update \
               --function-id "$FUNCTION_ID" \
               --image "${{ steps.image.outputs.image }}" \
