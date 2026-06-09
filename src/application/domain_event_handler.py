@@ -101,9 +101,7 @@ class DomainEventHandler:
                     prompt_version=route.workflow.prompt_version,
                 )
             try:
-                task_graph = self.orchestrator.build_task_graph(
-                    snapshot.context, route.workflow
-                )
+                task_graph = self.orchestrator.build_task_graph(snapshot.context, route.workflow)
                 task_graph = task_graph.model_copy(update={"plan_id": agent_run_id})
                 self.state_store.save_task_graph(task_graph)
                 root_node = task_graph.nodes[0]

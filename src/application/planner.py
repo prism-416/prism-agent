@@ -91,9 +91,7 @@ class Planner:
         return plan
 
     @staticmethod
-    def _idempotency_prefix(
-        context: AgentContext, agent_run_id: str, plan_id: str | None
-    ) -> str:
+    def _idempotency_prefix(context: AgentContext, agent_run_id: str, plan_id: str | None) -> str:
         # A scoped sub-plan keys idempotency off its own plan_id to avoid colliding
         # with sibling nodes that reuse the same tool. The default (whole-workflow)
         # plan preserves the original prefix exactly.

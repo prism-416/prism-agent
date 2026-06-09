@@ -49,6 +49,4 @@ class SubAgentRunner:
             context_scope=node.context_scope or None,
             model_tier=node.model_tier or None,
         )
-        return plan.model_copy(
-            update={"parent_run_id": agent_run_id, "node_id": node.node_id}
-        )
+        return plan.model_copy(update={"parent_run_id": agent_run_id, "node_id": node.node_id})
