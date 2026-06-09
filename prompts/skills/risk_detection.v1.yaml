@@ -3,6 +3,7 @@ id: risk_detection
 version: 1.0.0
 name: Risk Detection
 description: Detects product delivery, scope, dependency, and stale-state risks.
+model_tier: flash
 instruction: >
   Identify risks that can change planning or execution decisions, and explain the evidence
   behind each risk.

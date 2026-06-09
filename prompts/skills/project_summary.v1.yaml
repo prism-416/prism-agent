@@ -3,6 +3,7 @@ id: project_summary
 version: 1.0.0
 name: Project Summary
 description: Summarizes project state for planning, reports, and dashboard insights.
+model_tier: pro
 instruction: >
   Summarize material changes, blockers, risks, completed work, and next actions from
   Prism project state.
