@@ -50,3 +50,6 @@ class SkillRegistry:
         if skill_id not in self._definitions:
             raise KeyError(f"Skill definition not registered: {skill_id}")
         return self._definitions[skill_id]
+
+    def model_tier(self, skill_id: str) -> str:
+        return self.definition(skill_id).model_tier
