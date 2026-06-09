@@ -31,8 +31,8 @@ jobs:
       OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
       OCI_FUNCTION_APPLICATION_OCID: ${{ secrets.OCI_FUNCTION_APPLICATION_OCID }}
 
-      OCIR_REGION_KEY: ${{ vars.OCIR_REGION_KEY || 'icn' }}
-      OCIR_NAMESPACE: ${{ vars.OCIR_NAMESPACE || 'axid81m9t8ng' }}
+      OCIR_REGION_KEY: ${{ secrets.OCIR_REGION_KEY || 'icn' }}
+      OCIR_NAMESPACE: ${{ secrets.OCIR_NAMESPACE || 'axid81m9t8ng' }}
       OCIR_USERNAME: ${{ secrets.OCIR_USERNAME }}
       OCIR_REPOSITORY_NAME: ${{ vars.OCIR_REPOSITORY_NAME || 'prism-agent' }}
 
