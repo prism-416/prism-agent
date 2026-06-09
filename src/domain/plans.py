@@ -24,6 +24,8 @@ class AgentPlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     plan_id: str = Field(default_factory=lambda: str(uuid4()))
+    parent_run_id: str | None = None
+    node_id: str | None = None
     source_event_id: str
     workspace_id: str
     project_id: str | None
@@ -37,6 +39,10 @@ class AgentPlan(BaseModel):
     context_snapshot_ref: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+    @property
+    def is_subplan(self) -> bool:
+        return self.parent_run_id is not None
 
     def get_action(self, action_id: str) -> PlannedAction | None:
         return next((action for action in self.actions if action.action_id == action_id), None)
