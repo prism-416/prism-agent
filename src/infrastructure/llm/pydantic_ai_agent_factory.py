@@ -20,11 +20,13 @@ class RuntimePlanningAgent:
         skills: list[RuntimeSkill],
         tools: list[BaseAgentTool],
         model_provider: GeminiModelProvider,
+        model_tier: str | None = None,
     ) -> None:
         self.workflow_prompt = workflow_prompt
         self.skills = skills
         self.tools = tools
         self.model_provider = model_provider
+        self.model_tier = model_tier
         self._retry_feedback: str | None = None
 
     def generate_plan(
@@ -66,7 +68,7 @@ class RuntimePlanningAgent:
 
         instructions = self._render_instructions()
         agent = Agent(
-            self.model_provider.pydantic_ai_model_ref(self.workflow_prompt),
+            self.model_provider.pydantic_ai_model_ref(self.workflow_prompt, self.model_tier),
             output_type=AgentPlan,
             instructions=instructions,
         )
@@ -155,10 +157,12 @@ class PydanticAIAgentFactory:
         workflow_prompt: WorkflowPromptDefinition,
         skills: list[RuntimeSkill],
         tools: list[BaseAgentTool],
+        model_tier: str | None = None,
     ) -> RuntimePlanningAgent:
         return RuntimePlanningAgent(
             workflow_prompt=workflow_prompt,
             skills=skills,
             tools=tools,
             model_provider=self.model_provider,
+            model_tier=model_tier,
         )
