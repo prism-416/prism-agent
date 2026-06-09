@@ -10,6 +10,7 @@ from domain.context import ContextSnapshot
 from domain.events import utc_now
 from domain.plans import AgentPlan, PlanStatus
 from domain.results import ToolResult, TraceEvent
+from domain.subtasks import SubAgentResult, SubTask, SubTaskStatus, TaskGraph, TaskGraphAdvance
 from infrastructure.prism_api.client import PrismApiClient, PrismApiNotFoundError
 from infrastructure.state.base import StateStore
 from infrastructure.state.memory_state_store import MemoryStateStore
@@ -44,6 +45,53 @@ class PrismApiStateStore(StateStore):
         self.fallback_store.save_plan(plan)
         self._remember_plan_idempotency(plan)
         self._persist_plan(plan)
+
+    def save_task_graph(self, graph: TaskGraph) -> None:
+        self.fallback_store.save_task_graph(graph)
+        self._persist_task_graph(graph)
+
+    def get_task_graph(self, workspace_id: str, plan_id: str) -> TaskGraph | None:
+        self._restore_run_state(workspace_id, plan_id)
+        return self.fallback_store.get_task_graph(workspace_id, plan_id)
+
+    def save_sub_agent_result(self, workspace_id: str, run_id: str, result: SubAgentResult) -> None:
+        self.fallback_store.save_sub_agent_result(workspace_id, run_id, result)
+        self._persist_sub_agent_result(workspace_id, run_id, result)
+
+    def get_sub_agent_results(self, workspace_id: str, run_id: str) -> list[SubAgentResult]:
+        self._restore_run_state(workspace_id, run_id)
+        return self.fallback_store.get_sub_agent_results(workspace_id, run_id)
+
+    def claim_ready_nodes(self, workspace_id: str, run_id: str) -> list[SubTask]:
+        graph = self.get_task_graph(workspace_id, run_id)
+        if graph is None:
+            return []
+        graph, claimed = graph.claim_ready()
+        if claimed:
+            self.save_task_graph(graph.bumped())
+        return claimed
+
+    def advance_task_graph(
+        self, workspace_id: str, run_id: str, node_id: str, status: SubTaskStatus
+    ) -> TaskGraphAdvance | None:
+        # Read-modify-write against the freshest durable graph. Atomic within a
+        # process and idempotent across redeliveries; cross-invocation safety still
+        # needs an API compare-and-set on the persisted ``version`` (documented).
+        graph = self.get_task_graph(workspace_id, run_id)
+        if graph is None:
+            return None
+        advance = graph.plan_advance(node_id, status)
+        if not advance.already_processed:
+            self.save_task_graph(advance.graph.bumped())
+        return advance
+
+    def _restore_run_state(self, workspace_id: str, run_id: str) -> None:
+        try:
+            state = self._fetch_agent_run_state(workspace_id, run_id)
+        except RuntimeError:
+            state = None
+        if state is not None:
+            self._load_state_memories(workspace_id, run_id, state)
 
     def get_plan(self, workspace_id: str, plan_id: str) -> AgentPlan | None:
         try:
@@ -209,6 +257,15 @@ class PrismApiStateStore(StateStore):
                 elif kind == "action_result":
                     result = ToolResult.model_validate(record.get("result"))
                     self.fallback_store.save_action_result(result)
+                elif kind == "task_graph":
+                    graph = TaskGraph.model_validate(record.get("graph"))
+                    self.fallback_store.save_task_graph(graph)
+                elif kind == "sub_agent_result":
+                    sub_result = SubAgentResult.model_validate(record.get("result"))
+                    result_run_id = record.get("run_id") or run_id
+                    self.fallback_store.save_sub_agent_result(
+                        workspace_id, result_run_id, sub_result
+                    )
                 elif kind == "idempotency_key":
                     key = record.get("key")
                     if isinstance(key, str) and key:
@@ -234,6 +291,32 @@ class PrismApiStateStore(StateStore):
             record={
                 "kind": "plan",
                 "plan": plan.model_dump(mode="json"),
+            },
+        )
+
+    def _persist_task_graph(self, graph: TaskGraph) -> None:
+        self._persist_state_memory(
+            graph.workspace_id,
+            memory_id=_state_memory_id(graph.plan_id, "task_graph"),
+            run_id=graph.plan_id,
+            memory_type="agent_decision",
+            title="Task graph",
+            record={"kind": "task_graph", "graph": graph.model_dump(mode="json")},
+        )
+
+    def _persist_sub_agent_result(
+        self, workspace_id: str, run_id: str, result: SubAgentResult
+    ) -> None:
+        self._persist_state_memory(
+            workspace_id,
+            memory_id=_state_memory_id(run_id, result.node_id, "sub_agent_result"),
+            run_id=run_id,
+            memory_type="agent_result",
+            title="Subagent result",
+            record={
+                "kind": "sub_agent_result",
+                "run_id": run_id,
+                "result": result.model_dump(mode="json"),
             },
         )
 
