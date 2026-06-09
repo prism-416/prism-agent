@@ -6,14 +6,46 @@ from typing import Any
 from app.container import build_container
 from application.feature_provisioning_worker import FeatureProvisioningWorker
 from domain.events import AgentActionEvent, EventEnvelope
+from domain.results import TraceEvent
 from infrastructure.config.settings import Settings
+from infrastructure.notifications.discord_notifier import DiscordNotifier
 from infrastructure.object_storage.oci_payload_store import ObjectStoragePayloadStore
+
+# Trace events that represent a problem worth surfacing in an invocation summary.
+_FAILURE_EVENTS = {
+    "event.failed",
+    "plan.failed",
+    "plan.empty",
+    "action.failed",
+    "action.execution_error",
+    "action.validation_failed",
+    "action.stale_context",
+    "orchestration.failed",
+    "orchestration.blocked",
+    "recursion.max_depth",
+}
 
 
 def handler(ctx: Any, data: bytes | str | dict[str, Any]) -> dict[str, Any]:
     _ = ctx
     payload = _queue_message_content(_decode_payload(data))
     settings = Settings.from_env()
+    notifier = DiscordNotifier(settings.discord_webhook_url)
+    label = _payload_label(payload)
+
+    notifier.send(f"▶️ Triggered: {label}")
+    try:
+        result, traces = _process(settings, payload)
+    except Exception as exc:
+        notifier.send(_failure_message(label, exc))
+        raise
+    notifier.send(_summary_message(label, traces))
+    return result
+
+
+def _process(
+    settings: Settings, payload: dict[str, Any]
+) -> tuple[dict[str, Any], list[TraceEvent]]:
     if _is_feature_provisioning_pointer(payload):
         return _handle_feature_provisioning_pointer(settings, payload)
 
@@ -21,23 +53,29 @@ def handler(ctx: Any, data: bytes | str | dict[str, Any]) -> dict[str, Any]:
     container = build_container(settings)
     if container.recursion_runner.exceeds_max_depth(envelope):
         container.recursion_runner.record_max_depth_failure(envelope.event)
-        return {
-            "ok": False,
-            "event_id": envelope.event_id,
-            "event_type": envelope.event_type,
-            "reason": "max_recursion_depth_exceeded",
-        }
+        return (
+            {
+                "ok": False,
+                "event_id": envelope.event_id,
+                "event_type": envelope.event_type,
+                "reason": "max_recursion_depth_exceeded",
+            },
+            _traces(container.state_store),
+        )
 
     if isinstance(envelope.event, AgentActionEvent):
         container.action_event_handler.handle(envelope)
     else:
         container.domain_event_handler.handle(envelope)
 
-    return {
-        "ok": True,
-        "event_id": envelope.event_id,
-        "event_type": envelope.event_type,
-    }
+    return (
+        {
+            "ok": True,
+            "event_id": envelope.event_id,
+            "event_type": envelope.event_type,
+        },
+        _traces(container.state_store),
+    )
 
 
 def _decode_payload(data: bytes | str | dict[str, Any]) -> dict[str, Any]:
@@ -74,7 +112,7 @@ def _is_feature_provisioning_pointer(payload: dict[str, Any]) -> bool:
 def _handle_feature_provisioning_pointer(
     settings: Settings,
     payload: dict[str, Any],
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], list[TraceEvent]]:
     payload_store = ObjectStoragePayloadStore(
         settings.object_storage_namespace,
         settings.object_storage_bucket_name,
@@ -86,10 +124,72 @@ def _handle_feature_provisioning_pointer(
         recursion_runner=worker_container.recursion_runner,
     )
     result = worker.handle_pointer(payload)
-    return {
-        "ok": True,
-        "event_id": result.event_id,
-        "event_type": "feature.provisioning.requested",
-        "request_id": result.request_id,
-        "duplicate": result.duplicate,
-    }
+    return (
+        {
+            "ok": True,
+            "event_id": result.event_id,
+            "event_type": "feature.provisioning.requested",
+            "request_id": result.request_id,
+            "duplicate": result.duplicate,
+        },
+        _traces(worker_container.state_store),
+    )
+
+
+def _traces(state_store: Any) -> list[TraceEvent]:
+    traces = getattr(state_store, "traces", None)
+    return list(traces) if traces else []
+
+
+def _payload_label(payload: dict[str, Any]) -> str:
+    if payload.get("type") == "feature.provisioning.requested":
+        return _format_label(
+            "feature.provisioning.requested",
+            payload.get("workspaceId") or payload.get("workspace_id"),
+        )
+    return _format_label(payload.get("event_type") or "unknown", payload.get("workspace_id"))
+
+
+def _format_label(event_type: str, workspace_id: str | None) -> str:
+    workspace = f" · ws `{workspace_id}`" if workspace_id else ""
+    return f"`{event_type}`{workspace}"
+
+
+def _summary_message(label: str, traces: list[TraceEvent]) -> str:
+    tools = _completed_tools(traces)
+    issues = [f"{trace.event_name}: {trace.message}" for trace in traces if _is_failure(trace)]
+    run_id = _run_id(traces)
+
+    lines = [f"{'⚠️' if issues else '✅'} {label}"]
+    if run_id:
+        lines.append(f"run: `{run_id}`")
+    lines.append(f"actions({len(tools)}): {', '.join(tools)}" if tools else "actions: none")
+    if issues:
+        lines.append("issues:\n" + "\n".join(f"- {issue}" for issue in issues[:5]))
+    return "\n".join(lines)
+
+
+def _failure_message(label: str, exc: Exception) -> str:
+    return f"❌ Failed: {label}\n`{type(exc).__name__}: {exc}`"
+
+
+def _completed_tools(traces: list[TraceEvent]) -> list[str]:
+    tools: list[str] = []
+    for trace in traces:
+        if trace.event_name != "action.completed":
+            continue
+        tool_name = trace.data.get("tool_name")
+        if isinstance(tool_name, str) and tool_name and tool_name not in tools:
+            tools.append(tool_name)
+    return tools
+
+
+def _is_failure(trace: TraceEvent) -> bool:
+    return trace.event_name in _FAILURE_EVENTS
+
+
+def _run_id(traces: list[TraceEvent]) -> str | None:
+    for trace in traces:
+        if trace.plan_id:
+            return trace.plan_id
+    return None

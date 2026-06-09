@@ -23,6 +23,7 @@ class Settings(BaseModel):
     object_storage_namespace: str | None = None
     prism_api_base_url: str | None = None
     prism_api_token: str | None = None
+    discord_webhook_url: str | None = None
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -41,4 +42,5 @@ class Settings(BaseModel):
             object_storage_namespace=os.getenv("OCI_OBJECT_STORAGE_NAMESPACE") or None,
             prism_api_base_url=os.getenv("PRISM_API_BASE_URL"),
             prism_api_token=os.getenv("PRISM_API_TOKEN") or None,
+            discord_webhook_url=os.getenv("DISCORD_WEBHOOK_URL") or None,
         )
