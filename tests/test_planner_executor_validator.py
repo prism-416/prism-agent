@@ -311,7 +311,8 @@ def test_planner_normalizes_live_llm_runtime_control_fields(prompts_path) -> Non
 
 
 class _DisallowedToolAgentFactory:
-    def create_agent(self, workflow_prompt, skills, tools):
+    def create_agent(self, workflow_prompt, skills, tools, model_tier=None):
+        _ = model_tier
         return _DisallowedToolAgent(workflow_prompt)
 
 
@@ -349,8 +350,8 @@ class _DisallowedToolAgent:
 
 
 class _UnnormalizedAllowedToolAgentFactory:
-    def create_agent(self, workflow_prompt, skills, tools):
-        _ = (skills, tools)
+    def create_agent(self, workflow_prompt, skills, tools, model_tier=None):
+        _ = (skills, tools, model_tier)
         return _UnnormalizedAllowedToolAgent(workflow_prompt)
 
 

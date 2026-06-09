@@ -5,6 +5,8 @@ from uuid import UUID
 from application.agent_run_sync import AgentRunSync
 from application.domain_event_handler import DomainEventHandler
 from application.event_router import RouteResult
+from application.orchestrator import Orchestrator
+from application.subagent_runner import SubAgentRunner
 from domain.actions import ActionStatus, PlannedAction
 from domain.agent_run import action_api_id, resolve_agent_run_id, stable_agent_run_uuid
 from domain.context import AgentContext
@@ -177,13 +179,16 @@ def test_domain_event_handler_creates_agent_run_before_planning() -> None:
         )
     )
     context_provider = _StaticContextProvider(source_event, workflow)
+    planner = _AssertingPlanner(prism_client)
     handler = DomainEventHandler(
         _StaticRouter(workflow),
         context_provider,
-        _AssertingPlanner(prism_client),
+        planner,
         state_store,
         queue,
         AgentRunSync(prism_client, enabled=True),
+        Orchestrator(),
+        SubAgentRunner(planner),
     )
 
     handler.handle(source_event)
@@ -223,13 +228,16 @@ def test_domain_event_handler_marks_empty_plan_as_failed() -> None:
             correlation_id="empty-plan-run",
         )
     )
+    planner = _EmptyPlanner()
     handler = DomainEventHandler(
         _StaticRouter(workflow),
         _StaticContextProvider(source_event, workflow),
-        _EmptyPlanner(),
+        planner,
         state_store,
         queue,
         AgentRunSync(prism_client, enabled=True),
+        Orchestrator(),
+        SubAgentRunner(planner),
     )
 
     handler.handle(source_event)
@@ -304,13 +312,16 @@ def test_domain_event_handler_replans_existing_replan_required_run() -> None:
         status=PlanStatus.REPLAN_REQUIRED,
     )
     state_store.save_plan(stale_plan)
+    planner = _ReplanPlanner()
     handler = DomainEventHandler(
         _StaticRouter(workflow),
         _StaticContextProvider(source_event, workflow),
-        _ReplanPlanner(),
+        planner,
         state_store,
         queue,
         AgentRunSync(prism_client, enabled=True),
+        Orchestrator(),
+        SubAgentRunner(planner),
     )
 
     handler.handle(source_event)
