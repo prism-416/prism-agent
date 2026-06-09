@@ -3,7 +3,14 @@ from __future__ import annotations
 from application.action_event_handler import ActionEventHandler
 from application.agent_run_sync import AgentRunSync
 from application.domain_event_handler import DomainEventHandler
-from domain.events import AgentActionEvent, EventEnvelope, RuntimeEvent
+from application.subagent_coordinator import SubAgentCoordinator
+from domain.events import (
+    AgentActionEvent,
+    EventEnvelope,
+    RuntimeEvent,
+    SubAgentCompletedEvent,
+    SubAgentTaskEvent,
+)
 from domain.results import TraceEvent
 from infrastructure.queue.base import Queue
 from infrastructure.state.base import StateStore
@@ -18,6 +25,7 @@ class RecursionRunner:
         action_event_handler: ActionEventHandler,
         max_recursion_depth: int,
         agent_run_sync: AgentRunSync | None = None,
+        subagent_coordinator: SubAgentCoordinator | None = None,
     ) -> None:
         self.queue = queue
         self.state_store = state_store
@@ -25,6 +33,7 @@ class RecursionRunner:
         self.action_event_handler = action_event_handler
         self.max_recursion_depth = max_recursion_depth
         self.agent_run_sync = agent_run_sync
+        self.subagent_coordinator = subagent_coordinator
         self._seen_event_ids: set[str] = set()
 
     def run(self, seed_event: RuntimeEvent | EventEnvelope) -> list[TraceEvent]:
@@ -65,6 +74,10 @@ class RecursionRunner:
                 self._seen_event_ids.add(event.event_id)
                 if isinstance(event, AgentActionEvent):
                     self.action_event_handler.handle(message.envelope)
+                elif isinstance(event, SubAgentTaskEvent | SubAgentCompletedEvent):
+                    if self.subagent_coordinator is None:
+                        raise RuntimeError("SubAgentCoordinator is not configured.")
+                    self.subagent_coordinator.handle(message.envelope)
                 else:
                     self.domain_event_handler.handle(message.envelope)
                 self.queue.ack(message)

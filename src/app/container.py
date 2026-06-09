@@ -8,8 +8,11 @@ from application.context_provider import ContextProvider
 from application.domain_event_handler import DomainEventHandler
 from application.event_router import EventRouter
 from application.executor import Executor
+from application.orchestrator import Orchestrator
 from application.planner import Planner
 from application.recursion_runner import RecursionRunner
+from application.subagent_coordinator import SubAgentCoordinator
+from application.subagent_runner import SubAgentRunner
 from application.trigger_policy import TriggerPolicy
 from application.validator import Validator
 from infrastructure.config.settings import Settings
@@ -43,6 +46,9 @@ class AppContainer:
     validator: Validator
     router: EventRouter
     context_provider: ContextProvider
+    orchestrator: Orchestrator
+    subagent_runner: SubAgentRunner
+    subagent_coordinator: SubAgentCoordinator
     agent_run_sync: AgentRunSync
     domain_event_handler: DomainEventHandler
     action_event_handler: ActionEventHandler
@@ -65,6 +71,8 @@ def build_container(settings: Settings | None = None) -> AppContainer:
     validator = Validator(prism_client)
     router = EventRouter(TriggerPolicy(), workflow_registry)
     context_provider = ContextProvider(prism_client, prompt_registry)
+    orchestrator = Orchestrator(skill_registry)
+    subagent_runner = SubAgentRunner(planner)
     agent_run_sync = AgentRunSync(
         prism_client,
         enabled=settings.state_backend == "prism_api",
@@ -76,6 +84,8 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         state_store,
         queue,
         agent_run_sync,
+        orchestrator,
+        subagent_runner,
     )
     action_event_handler = ActionEventHandler(
         executor,
@@ -84,6 +94,13 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         queue,
         agent_run_sync,
     )
+    subagent_coordinator = SubAgentCoordinator(
+        state_store,
+        queue,
+        subagent_runner,
+        agent_run_sync,
+        workflow_registry,
+    )
     recursion_runner = RecursionRunner(
         queue=queue,
         state_store=state_store,
@@ -91,6 +108,7 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         action_event_handler=action_event_handler,
         max_recursion_depth=settings.max_recursion_depth,
         agent_run_sync=agent_run_sync,
+        subagent_coordinator=subagent_coordinator,
     )
     return AppContainer(
         settings=settings,
@@ -106,6 +124,9 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         validator=validator,
         router=router,
         context_provider=context_provider,
+        orchestrator=orchestrator,
+        subagent_runner=subagent_runner,
+        subagent_coordinator=subagent_coordinator,
         agent_run_sync=agent_run_sync,
         domain_event_handler=domain_event_handler,
         action_event_handler=action_event_handler,

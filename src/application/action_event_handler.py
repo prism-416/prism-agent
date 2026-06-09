@@ -19,6 +19,7 @@ from domain.events import (
     EventEnvelope,
     ManualInvocationEvent,
     ScheduledEvent,
+    SubAgentCompletedEvent,
 )
 from domain.plans import PlanStatus
 from domain.results import TraceEvent, ValidationDecision
@@ -148,6 +149,8 @@ class ActionEventHandler:
                     },
                 ),
             )
+            if updated_plan.is_subplan:
+                self._settle_subplan(envelope, updated_plan, "waiting_for_approval")
             return
 
         if pre_validation.decision == ValidationDecision.REPLAN:
@@ -174,6 +177,16 @@ class ActionEventHandler:
                     },
                 ),
             )
+            if updated_plan.is_subplan:
+                # Orchestrated replan is deferred; settle the node as failed so the
+                # run does not hang on stale context.
+                self._settle_subplan(
+                    envelope,
+                    updated_plan,
+                    "failed",
+                    message=pre_validation.reason or "stale_context",
+                )
+                return
             replan_event = _replan_event(
                 context=context,
                 plan=updated_plan,
@@ -223,6 +236,13 @@ class ActionEventHandler:
                     },
                 ),
             )
+            if updated_plan.is_subplan:
+                self._settle_subplan(
+                    envelope,
+                    updated_plan,
+                    "failed",
+                    message=pre_validation.reason or "validation_failed",
+                )
             return
 
         running_action = action.with_status(ActionStatus.RUNNING)
@@ -283,6 +303,9 @@ class ActionEventHandler:
                 action.action_id,
                 action_trace_data(failed_action, error_data),
             )
+            if failed_plan.is_subplan:
+                self._settle_subplan(envelope, failed_plan, "failed", message=failure_message)
+                return
             raise
         self.state_store.save_action_result(result)
         post_validation = self.validator.validate_after_execution(action, context, result)
@@ -397,11 +420,28 @@ class ActionEventHandler:
                 },
             ),
         )
+        if updated_plan.is_subplan:
+            self._settle_subplan(
+                envelope,
+                updated_plan,
+                "failed",
+                message=post_validation.reason or "post_validation_failed",
+            )
 
     def _enqueue_next_action(self, envelope: EventEnvelope, plan) -> None:
         next_action = plan.next_pending_action()
         if next_action is None:
             if plan.status == PlanStatus.COMPLETED:
+                if plan.is_subplan:
+                    self._trace(
+                        envelope.event,
+                        "plan.completed",
+                        f"Sub-plan {plan.plan_id} completed for node {plan.node_id}.",
+                        plan.plan_id,
+                        data={"plan_status": plan.status.value, "node_id": plan.node_id},
+                    )
+                    self._settle_subplan(envelope, plan, "completed")
+                    return
                 self.agent_run_sync.record_run_completed(plan)
                 event_name = "plan.completed"
                 message = f"Plan {plan.plan_id} has no remaining pending actions."
@@ -450,6 +490,42 @@ class ActionEventHandler:
     def _enqueue_events(self, envelopes: list[EventEnvelope]) -> None:
         for emitted in envelopes:
             self.queue.enqueue(emitted)
+
+    def _settle_subplan(
+        self,
+        envelope: EventEnvelope,
+        plan,
+        status: str,
+        message: str | None = None,
+    ) -> None:
+        """Tell the orchestration coordinator a subagent node has settled.
+
+        Called only for sub-plans (``plan.is_subplan``). The coordinator advances
+        the task graph, runs the synthesizer, or finalizes/fails the shared run.
+        """
+        completed_event = SubAgentCompletedEvent(
+            workspace_id=plan.workspace_id,
+            project_id=plan.project_id,
+            plan_id=plan.parent_run_id,
+            node_id=plan.node_id,
+            status=status,
+            correlation_id=envelope.event.correlation_id,
+            causality=envelope.event.causality.child(envelope.event_id),
+            payload={"message": message} if message else {},
+        )
+        self.queue.enqueue(EventEnvelope.wrap(completed_event))
+        self._trace(
+            envelope.event,
+            "subagent.settled",
+            f"Subagent node {plan.node_id} settled as {status}.",
+            plan.parent_run_id,
+            data={
+                "node_id": plan.node_id,
+                "sub_plan_id": plan.plan_id,
+                "status": status,
+                "settle_event_id": completed_event.event_id,
+            },
+        )
 
     def _trace(
         self,
