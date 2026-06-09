@@ -118,9 +118,7 @@ class TaskGraph(BaseModel):
             synthesizer = graph.synthesizer_node
             if synthesizer is not None and synthesizer.status == SubTaskStatus.PENDING:
                 graph = graph.with_node_status(synthesizer.node_id, SubTaskStatus.RUNNING)
-                return TaskGraphAdvance(
-                    graph=graph, dispatch_synthesizer=graph.synthesizer_node
-                )
+                return TaskGraphAdvance(graph=graph, dispatch_synthesizer=graph.synthesizer_node)
             if synthesizer is not None and synthesizer.status != SubTaskStatus.COMPLETED:
                 return TaskGraphAdvance(graph=graph)
             return TaskGraphAdvance(graph=graph, run_completed=True)

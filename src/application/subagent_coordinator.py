@@ -90,9 +90,7 @@ class SubAgentCoordinator:
             data={"node_id": node.node_id, "skill_ids": node.skill_ids},
         )
 
-        sub_plan = self.subagent_runner.plan_for_node(
-            node, context, snapshot.ref, workflow, run_id
-        )
+        sub_plan = self.subagent_runner.plan_for_node(node, context, snapshot.ref, workflow, run_id)
         self.state_store.save_plan(sub_plan)
         self.agent_run_sync.record_plan_created(sub_plan, context)
 

@@ -109,9 +109,7 @@ def test_advance_diamond_dag_joins_at_leaves() -> None:
 
 
 def test_advance_blocked_when_dependency_never_satisfiable() -> None:
-    graph = _graph(
-        [SubTask(node_id="a", status=R), SubTask(node_id="b", depends_on=["missing"])]
-    )
+    graph = _graph([SubTask(node_id="a", status=R), SubTask(node_id="b", depends_on=["missing"])])
     advance = graph.plan_advance("a", C)
     assert advance.blocked
 

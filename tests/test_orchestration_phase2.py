@@ -65,9 +65,7 @@ def test_orchestrated_run_scopes_skills_per_node() -> None:
     )
 
     traces = container.recursion_runner.run(event)
-    run_id = next(
-        trace for trace in traces if trace.event_name == "orchestration.started"
-    ).plan_id
+    run_id = next(trace for trace in traces if trace.event_name == "orchestration.started").plan_id
 
     summary_plan = container.state_store.get_plan("w1", sub_plan_id(run_id, "summary"))
     risk_plan = container.state_store.get_plan("w1", sub_plan_id(run_id, "risk"))
