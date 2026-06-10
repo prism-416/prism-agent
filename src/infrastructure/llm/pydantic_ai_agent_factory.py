@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 
 from capabilities.definitions import WorkflowPromptDefinition
 from capabilities.skills import RuntimeSkill
@@ -72,8 +73,19 @@ class RuntimePlanningAgent:
             output_type=AgentPlan,
             instructions=instructions,
         )
-        result = agent.run_sync(self._render_user_prompt(context, context_snapshot_ref))
+        user_prompt = self._render_user_prompt(context, context_snapshot_ref)
+        result = self._run_agent_sync(agent, user_prompt)
         return result.output
+
+    @staticmethod
+    def _run_agent_sync(agent: object, user_prompt: str) -> object:
+        # pydantic-ai's run_sync drives the agent with loop.run_until_complete, which
+        # raises "This event loop is already running" when called inside the OCI/FDK
+        # handler's already-running event loop. Executing it on a dedicated worker
+        # thread gives run_sync a fresh event loop of its own. GEMINI_API_KEY and
+        # other config are set via process-global env, so the worker thread sees them.
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(agent.run_sync, user_prompt).result()
 
     def _render_instructions(self) -> str:
         return self.compile_system_prompt()
