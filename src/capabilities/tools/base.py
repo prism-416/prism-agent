@@ -9,6 +9,7 @@ from domain.context import AgentContext
 from domain.results import ToolResult
 
 if TYPE_CHECKING:
+    from infrastructure.llm.gemini_embeddings import GeminiQueryEmbedder
     from infrastructure.prism_api.client import PrismApiClient
 
 
@@ -20,6 +21,7 @@ class BaseAgentTool(ABC):
         self,
         definition: ToolPromptDefinition,
         prism_client: PrismApiClient | None = None,
+        embedder: GeminiQueryEmbedder | None = None,
     ) -> None:
         if definition.id != self.name:
             raise ValueError(
@@ -28,6 +30,7 @@ class BaseAgentTool(ABC):
             )
         self.definition = definition
         self.prism_client = prism_client
+        self.embedder = embedder
 
     @property
     def prompt_description(self) -> str:

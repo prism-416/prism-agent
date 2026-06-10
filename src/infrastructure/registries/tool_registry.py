@@ -18,6 +18,7 @@ from capabilities.tools.workitem_tools import (
     UpdateWorkItemStatusTool,
     UpdateWorkItemTool,
 )
+from infrastructure.llm.gemini_embeddings import GeminiQueryEmbedder
 from infrastructure.prism_api.client import PrismApiClient
 from infrastructure.registries.prompt_registry import PromptRegistry
 
@@ -48,13 +49,16 @@ class ToolRegistry:
         cls,
         prompt_registry: PromptRegistry,
         prism_client: PrismApiClient | None = None,
+        embedder: GeminiQueryEmbedder | None = None,
     ) -> ToolRegistry:
         registry = cls()
         for definition in prompt_registry.list_tools():
             implementation = cls.TOOL_IMPLEMENTATIONS.get(definition.id)
             if implementation is None:
                 continue
-            registry.register(implementation(definition, prism_client=prism_client))
+            registry.register(
+                implementation(definition, prism_client=prism_client, embedder=embedder)
+            )
         return registry
 
     @classmethod

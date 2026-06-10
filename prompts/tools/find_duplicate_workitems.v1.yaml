@@ -2,11 +2,15 @@ kind: tool
 id: find_duplicate_workitems
 version: 1.0.0
 name: Find Duplicate Work Items
-description: Searches hydrated backlog context for duplicate or overlapping work items.
+description: >
+  Finds existing work items that duplicate or overlap proposed work, using semantic
+  similarity over stored work item content when available and title matching against
+  hydrated context otherwise.
 usage:
   - Use before proposing new work items.
   - Use during backlog refinement and story decomposition.
-  - Search hydrated related or sibling work item context for title overlap.
+  - Provide the proposed title and, when available, the proposed description for the most accurate match.
+  - Treat returned items with high similarity as existing work; extend them instead of recreating them.
 do_not_use:
   - Do not use to decide priority by itself.
 risk_level: low
@@ -14,3 +18,4 @@ approval_policy: auto_commit
 input_contract:
   projectId: string
   title: string
+  description: optional string

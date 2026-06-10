@@ -111,7 +111,7 @@ def test_skills_are_instantiated_from_yaml_without_inline_skill_modules() -> Non
     capabilities_dir = Path(__file__).resolve().parents[1] / "src" / "capabilities"
     skill_modules = sorted(path.name for path in capabilities_dir.glob("*.py"))
 
-    assert skill_modules == ["__init__.py", "definitions.py", "skills.py"]
+    assert skill_modules == ["__init__.py", "definitions.py", "plan_quality.py", "skills.py"]
 
 
 def test_tools_do_not_define_prompt_descriptions_inline() -> None:

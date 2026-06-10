@@ -36,12 +36,37 @@ _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}")
 _MEMBER_ENTITY_KEYS = ("project_members", "workspace_members", "member_workloads")
 
 
+SEMANTIC_DUPLICATE_SIMILARITY_THRESHOLD = 0.75
+SEMANTIC_DUPLICATE_SEARCH_LIMIT = 8
+
+
 class FindDuplicateWorkItemsTool(BaseAgentTool):
+    """Finds existing work items that overlap a candidate title/description.
+
+    Prefers semantic search over the stored work item embeddings (query embedded
+    with the same model the vector workers use); falls back to lexical title
+    matching against hydrated context when embeddings or the API are unavailable.
+    """
+
     name = "find_duplicate_workitems"
 
     def execute(self, action: PlannedAction, context: AgentContext) -> ToolResult:
         work_item = context.entities.get("work_item") or context.entities.get("story", {})
         title = str(action.input.get("title") or work_item.get("title", ""))
+        proposed_text = str(action.input.get("description") or "")
+
+        semantic = self._semantic_duplicates(title, proposed_text, context)
+        if semantic is not None:
+            source_item_id = str(work_item.get("itemId") or work_item.get("id") or "")
+            duplicates = [item for item in semantic if str(item.get("itemId")) != source_item_id]
+            return ToolResult(
+                plan_id=action.plan_id,
+                action_id=action.action_id,
+                tool_name=self.name,
+                success=True,
+                output={"duplicates": duplicates, "method": "semantic"},
+            )
+
         related = context.entities.get("sibling_work_items") or context.entities.get(
             "related_workitems", []
         )
@@ -58,8 +83,37 @@ class FindDuplicateWorkItemsTool(BaseAgentTool):
             action_id=action.action_id,
             tool_name=self.name,
             success=True,
-            output={"duplicates": duplicates},
+            output={"duplicates": duplicates, "method": "lexical"},
         )
+
+    def _semantic_duplicates(
+        self,
+        title: str,
+        proposed_text: str,
+        context: AgentContext,
+    ) -> list[dict[str, Any]] | None:
+        """Similar items above the duplicate threshold, or None to use the fallback."""
+        if not (self.prism_client and self.prism_client.is_configured):
+            return None
+        if self.embedder is None or not self.embedder.is_configured:
+            return None
+        query = f"{title}\n{proposed_text}".strip()
+        embedding = self.embedder.embed_query(query)
+        if embedding is None:
+            return None
+        try:
+            similar = self.prism_client.find_similar_work_items(
+                str(context.project_id or ""),
+                embedding,
+                limit=SEMANTIC_DUPLICATE_SEARCH_LIMIT,
+            )
+        except RuntimeError:
+            return None
+        return [
+            item
+            for item in similar
+            if float(item.get("similarity") or 0.0) >= SEMANTIC_DUPLICATE_SIMILARITY_THRESHOLD
+        ]
 
 
 class CreateWorkItemTool(BaseAgentTool):

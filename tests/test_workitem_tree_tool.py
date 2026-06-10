@@ -426,7 +426,16 @@ class _TypedDraftPlanningAgent(RuntimePlanningAgent):
                         tool_name="create_workitem_tree",
                         instruction="Create the breakdown.",
                         input={"projectId": context.project_id},
-                        work_items=[WorkItemDraft(title="Build feature", description="AC")],
+                        work_items=[
+                            WorkItemDraft(
+                                title="Build feature",
+                                description=(
+                                    "Implements the requested feature behavior with "
+                                    "input validation, permission checks, and error "
+                                    "handling."
+                                ),
+                            )
+                        ],
                         idempotency_key="typed:create_workitem_tree:1",
                     )
                 ]
@@ -520,7 +529,15 @@ class _TreeRetryPlanningAgent(RuntimePlanningAgent):
         )
         input_data: dict[str, Any] = {"projectId": context.project_id}
         if self.attempts > 1:
-            input_data["items"] = [{"title": "Build feature", "description": "AC"}]
+            input_data["items"] = [
+                {
+                    "title": "Build feature",
+                    "description": (
+                        "Implements the requested feature behavior with input "
+                        "validation, permission checks, and error handling."
+                    ),
+                }
+            ]
         return plan.model_copy(
             update={
                 "actions": [

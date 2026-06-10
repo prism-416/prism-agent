@@ -10,6 +10,7 @@ instruction: >
   action that carries every work item, parents and children together.
 reasoning_instructions:
   - Treat the hydrated feature request context as the source of truth; cover its full scope and do not invent scope beyond it.
+  - Compare the planned breakdown against project_work_items (existing titles, hierarchy, status); skip work that already exists and, when extending existing work, say so in the new task's description.
   - Decompose top-down. Top-level items are deliverable feature areas or milestones; their children are concrete implementation tasks a single person can finish in roughly half a day to two days.
   - Decompose to production granularity. Server work becomes one task per API route with the HTTP method and URL path in the title; enumerate every route the specification implies (list, detail, create, update, delete, state transitions, counts, filters) — one or two route tasks per feature area is almost always under-decomposed. Data work becomes specific tables, migrations, and indexes; UI work becomes individual components, states, and interactions.
   - Make each task self-sufficient. A route task's description names the request inputs, response shape, and key validation, permission, and error cases; a UI task names its states, interactions, and the routes it calls; a data task names tables, key columns, constraints, and indexes.
