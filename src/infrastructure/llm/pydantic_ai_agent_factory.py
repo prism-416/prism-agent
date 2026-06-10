@@ -28,6 +28,35 @@ _EMPTY_PLAN_FEEDBACK = (
 )
 
 
+def _planning_view(context: AgentContext) -> dict:
+    """The slice of AgentContext the planner actually reasons over.
+
+    ``context.model_dump_json()`` embeds the full source event envelope, whose
+    payload duplicates every hydrated entity — roughly doubling the prompt for
+    no precision gain. Hydrated entities are the planning contract; the raw
+    payload stays available to tools at execution time.
+    """
+    view = {
+        "workspace_id": context.workspace_id,
+        "project_id": context.project_id,
+        "workflow_id": context.workflow_id,
+        "trigger": {
+            "event_type": context.source_event.event_type,
+            "event_id": context.source_event.event_id,
+        },
+        "entities": context.entities,
+        "entity_versions": context.entity_versions,
+        "permissions": context.permissions,
+        "retrieved_documents": context.retrieved_documents,
+        "previous_agent_outputs": context.previous_agent_outputs,
+        "runtime_metadata": context.runtime_metadata,
+    }
+    replan = context.source_event.event.payload.get("_agent_replan")
+    if isinstance(replan, dict):
+        view["replan_feedback"] = replan
+    return view
+
+
 def _quality_review_feedback(issues: list[str]) -> str:
     numbered = "\n".join(f"{index}. {issue}" for index, issue in enumerate(issues, start=1))
     return (
@@ -213,7 +242,7 @@ class RuntimePlanningAgent:
             f"Goal: {self.workflow_prompt.goal}\n"
             f"Workflow: {context.workflow_id}\n"
             f"Context snapshot: {context_snapshot_ref}\n"
-            f"Context: {context.model_dump_json()}"
+            f"Context: {json.dumps(_planning_view(context), ensure_ascii=False, default=str)}"
         )
         if self._retry_feedback:
             prompt += f"\n\nPlanning retry feedback: {self._retry_feedback}"

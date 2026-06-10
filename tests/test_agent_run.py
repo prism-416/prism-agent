@@ -106,6 +106,13 @@ def test_agent_run_sync_upserts_plan_and_action_state() -> None:
         event_name="action.executing",
         message="Executing create_sprint.",
     )
+    completed_action = action.with_status(ActionStatus.COMPLETED)
+    sync.record_action_state(
+        plan.replace_action(completed_action),
+        completed_action,
+        event_name="action.completed",
+        message="Completed create_sprint.",
+    )
 
     methods_and_paths = {(method, path) for method, path, _ in prism_client.calls}
     assert prism_client.calls[0] == (
@@ -121,7 +128,14 @@ def test_agent_run_sync_upserts_plan_and_action_state() -> None:
         },
     )
     assert ("POST", "/workspaces/w1/agent-runs/internal") in methods_and_paths
-    assert ("PATCH", "/workspaces/w1/agent-runs/internal/run-1/status") in methods_and_paths
+    # Redundant "running" status updates are skipped; only the terminal
+    # transition patches the run status.
+    status_patches = [
+        payload
+        for method, path, payload in prism_client.calls
+        if method == "PATCH" and path == "/workspaces/w1/agent-runs/internal/run-1/status"
+    ]
+    assert status_patches == [{"status": "completed"}]
     assert ("POST", "/workspaces/w1/agent-runs/internal/run-1/steps") in methods_and_paths
     assert ("POST", "/workspaces/w1/agent-runs/internal/run-1/actions") in methods_and_paths
     assert any(method == "POST" and path.endswith("/events") for method, path in methods_and_paths)
@@ -150,7 +164,7 @@ def test_agent_run_sync_upserts_plan_and_action_state() -> None:
     }
     assert "stepId" not in action_payloads[0]
     assert action_payloads[-1]["stepId"] == action_api_id(action)
-    assert action_payloads[-1]["status"] == "approved"
+    assert action_payloads[-1]["status"] == "executed"
     assert action_payloads[-1]["targetType"] == "tool"
     assert "targetId" not in action_payloads[-1]
     assert any(

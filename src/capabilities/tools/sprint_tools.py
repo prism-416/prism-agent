@@ -5,7 +5,6 @@ from datetime import UTC, datetime, timedelta
 from capabilities.tools.base import BaseAgentTool
 from domain.actions import PlannedAction
 from domain.context import AgentContext
-from domain.events import DomainEvent, EventEnvelope
 from domain.results import ToolResult
 
 
@@ -26,21 +25,14 @@ class CreateSprintTool(BaseAgentTool):
                 "workspaceId": workspace_id,
                 **payload,
             }
-        sprint_id = str(output.get("sprintId") or output.get("id") or f"local-{action.action_id}")
-        event = DomainEvent(
-            event_type="sprint.created",
-            workspace_id=context.workspace_id,
-            project_id=context.project_id,
-            payload={"sprintId": sprint_id, **output},
-            causality=context.source_event.event.causality.child(context.source_event.event_id),
-        )
+        # No follow-up event: nothing routes sprint.created, so emitting one only
+        # burns a queue message and an ignored invocation. Traces carry the result.
         return ToolResult(
             plan_id=action.plan_id,
             action_id=action.action_id,
             tool_name=self.name,
             success=True,
             output=output,
-            emitted_events=[EventEnvelope.wrap(event)],
         )
 
 

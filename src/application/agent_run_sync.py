@@ -142,11 +142,14 @@ class AgentRunSync:
         # A sub-plan never finalizes the shared run; the orchestration coordinator
         # owns run completion once every node (and the synthesizer) is done.
         run_status = "running" if plan.is_subplan else run_status_to_api(plan)
-        self.prism_client.update_agent_run_status(
-            plan.workspace_id,
-            _api_run_id(plan),
-            {"status": run_status},
-        )
+        # The run is already "running" from record_run_started; re-sending it on
+        # every action transition is a wasted API call. Only deviations matter.
+        if run_status != "running":
+            self.prism_client.update_agent_run_status(
+                plan.workspace_id,
+                _api_run_id(plan),
+                {"status": run_status},
+            )
 
     def record_run_completed(self, plan: AgentPlan) -> None:
         if not self.enabled:

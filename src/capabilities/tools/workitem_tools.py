@@ -8,7 +8,6 @@ from uuid import UUID
 from capabilities.tools.base import BaseAgentTool
 from domain.actions import PlannedAction, WorkItemLeafDraft
 from domain.context import AgentContext
-from domain.events import DomainEvent, EventEnvelope
 from domain.plans import AgentPlan
 from domain.results import ToolResult
 
@@ -138,21 +137,14 @@ class CreateWorkItemTool(BaseAgentTool):
                 "workspaceId": context.workspace_id,
                 **payload,
             }
-        item_id = str(output.get("itemId") or output.get("id") or f"local-{action.action_id}")
-        event = DomainEvent(
-            event_type="workitem.created",
-            workspace_id=context.workspace_id,
-            project_id=context.project_id,
-            payload={"itemId": item_id, **output},
-            causality=context.source_event.event.causality.child(context.source_event.event_id),
-        )
+        # No follow-up event: nothing routes workitem.created, so emitting one only
+        # burns a queue message and an ignored invocation. Traces carry the result.
         return ToolResult(
             plan_id=action.plan_id,
             action_id=action.action_id,
             tool_name=self.name,
             success=True,
             output=output,
-            emitted_events=[EventEnvelope.wrap(event)],
         )
 
 
@@ -200,17 +192,6 @@ class CreateWorkItemTreeTool(BaseAgentTool):
                 created=created,
             )
 
-        event = DomainEvent(
-            event_type="workitem.tree.created",
-            workspace_id=context.workspace_id,
-            project_id=context.project_id,
-            payload={
-                "itemIds": [item["itemId"] for item in created],
-                "createdCount": len(created),
-                "rootParentId": root_parent_id,
-            },
-            causality=context.source_event.event.causality.child(context.source_event.event_id),
-        )
         return ToolResult(
             plan_id=action.plan_id,
             action_id=action.action_id,
@@ -221,7 +202,6 @@ class CreateWorkItemTreeTool(BaseAgentTool):
                 "createdCount": len(created),
                 "items": created,
             },
-            emitted_events=[EventEnvelope.wrap(event)],
         )
 
     def _create_node(
@@ -293,20 +273,12 @@ class UpdateWorkItemTool(BaseAgentTool):
             output = self.prism_client.update_work_item(project_id, item_id, payload)
         else:
             output = {"itemId": item_id, "updated": True, **payload}
-        event = DomainEvent(
-            event_type="workitem.updated",
-            workspace_id=context.workspace_id,
-            project_id=context.project_id,
-            payload={"itemId": item_id, "changes": payload, "result": output},
-            causality=context.source_event.event.causality.child(context.source_event.event_id),
-        )
         return ToolResult(
             plan_id=action.plan_id,
             action_id=action.action_id,
             tool_name=self.name,
             success=True,
             output=output,
-            emitted_events=[EventEnvelope.wrap(event)],
         )
 
 
@@ -359,20 +331,12 @@ class UpdateWorkItemStatusTool(BaseAgentTool):
             output = self.prism_client.update_work_item(project_id, item_id, payload)
         else:
             output = {"itemId": item_id, "status": status}
-        event = DomainEvent(
-            event_type="workitem.updated",
-            workspace_id=context.workspace_id,
-            project_id=context.project_id,
-            payload={"itemId": item_id, "status": status},
-            causality=context.source_event.event.causality.child(context.source_event.event_id),
-        )
         return ToolResult(
             plan_id=action.plan_id,
             action_id=action.action_id,
             tool_name=self.name,
             success=True,
             output=output,
-            emitted_events=[EventEnvelope.wrap(event)],
         )
 
 

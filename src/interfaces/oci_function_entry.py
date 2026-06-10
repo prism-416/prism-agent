@@ -46,7 +46,8 @@ def handler(ctx: Any, data: bytes | str | dict[str, Any]) -> dict[str, Any]:
         payload = _queue_message_content(_decode_payload(data))
         label = _payload_label(payload)
         log_json(logger, logging.INFO, {"log": "invocation.start", **_payload_fields(payload)})
-        notifier.send(f"▶️ Triggered: {label}")
+        # No "triggered" ping: the end-of-invocation summary carries the same label,
+        # and each synchronous webhook call adds up to 5s to the invocation.
         result, traces = _process(settings, payload)
     except Exception as exc:
         log_json(
