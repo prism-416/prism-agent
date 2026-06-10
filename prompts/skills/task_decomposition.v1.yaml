@@ -2,26 +2,31 @@ kind: skill
 id: task_decomposition
 version: 1.0.0
 name: Task Decomposition
-description: Breaks product stories into useful implementation-sized tasks.
+description: Breaks a work item into a complete set of implementation-ready child work items.
 instruction: >
-  Decompose high-level work into clear implementation tasks with acceptance criteria,
-  ambiguity notes, and dependency awareness.
+  Decompose the source work item into implementation-ready child work items with
+  acceptance criteria and dependency awareness. Design the complete breakdown first,
+  then commit it in a single create_workitem_tree action attached under the source
+  work item via the top-level parentId.
 reasoning_instructions:
-  - Preserve product intent and avoid inventing scope.
-  - Avoid duplicate work items and overly small micro-tasks.
-  - Prefer suggestion mode when task creation requires approval.
-  - Create child tasks under the source story when using work item tools.
-  - Keep task titles concise.
-  - Put acceptance criteria inside the task description.
-  - Assign teammates only when hydrated member context provides a username, relevant jobNames, and acceptable workspace workload.
-  - Use member_workloads activeItemCount, overdueItemCount, and dueThisWeekItemCount as current load evidence; if workload is missing or unavailable, be conservative and leave ambiguous tasks unassigned.
+  - Preserve product intent and avoid inventing scope; everything you create must trace back to the source work item.
+  - Cover the source item's full scope. A typical story yields 4 to 8 child tasks; include implied work such as data changes, API changes, UI changes, tests, and documentation when the story touches them.
+  - Each leaf task should be finishable by one person in roughly half a day to two days; merge micro-tasks and split multi-day work.
+  - Use one create_workitem_tree action with parentId set to the source work item's itemId; use items[].children only when a child genuinely needs its own sub-breakdown.
+  - Check sibling_work_items and child_work_items (or find_duplicate_workitems) first, and do not recreate work that already exists.
+  - Write each description with two sections, "Context" and "Acceptance Criteria"; acceptance criteria must be concrete enough to review against.
+  - Assign a teammate only when hydrated member context provides a username whose jobNames or role match the task, and member_workloads (activeItemCount, overdueItemCount, dueThisWeekItemCount) show acceptable load; balance assignments across capable members.
+  - When capability or workload evidence is missing or ambiguous, leave the task unassigned rather than guessing.
+  - Keep titles concise and outcome-oriented (imperative, under 100 characters).
 allowed_tools:
   - find_duplicate_workitems
   - create_agent_suggestion
+  - create_workitem_tree
   - create_workitem
 guardrails:
-  max_tasks: 8
-  default_mode: suggest
+  max_tasks: 20
+  max_tree_depth: 3
+  default_mode: auto_commit
   work_item_statuses:
     - todo
     - in_progress
@@ -29,7 +34,7 @@ guardrails:
     - done
     - archived
 quality_expectations:
-  - Each proposed task has a clear outcome.
-  - Acceptance criteria are concrete enough for implementation and review.
+  - The breakdown covers the whole source work item, not just its most obvious part.
+  - Each proposed task has a single clear outcome and reviewable acceptance criteria.
   - Assigned tasks include a defensible role and workload match in the action instruction.
-  - Suggested task payloads conform to the selected work item tool contract.
+  - The breakdown is committed through one create_workitem_tree action whose payload conforms to the tool input contract.
