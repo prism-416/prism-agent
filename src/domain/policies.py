@@ -26,6 +26,8 @@ ALLOWED_DOMAIN_TRIGGERS = {
     "sprint.started",
     "sprint.ended",
     "pr.opened",
+    "pr.synchronize",
+    "pr.review_requested",
     "pr.merged",
 }
 

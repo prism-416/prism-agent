@@ -1,0 +1,25 @@
+kind: skill
+id: code_review
+version: 1.0.0
+name: Code Review
+description: Reviews a pull request diff and proposes grounded, line-anchored review feedback.
+instruction: >
+  Review the hydrated pull request diff and propose a GitHub review that helps the
+  author, grounding every comment in the actual changed lines.
+reasoning_instructions:
+  - Read the pull_request_diff files and patches before forming feedback.
+  - Anchor each review comment to a file path and line that appears in the diff.
+  - Prefer a concise summary plus a small number of high-signal comments over noise.
+  - Use REQUEST_CHANGES only for correctness, security, or contract-breaking issues.
+  - Use APPROVE only when completion policy allows approval from diff inspection.
+  - Carry the diff headSha into the review so a moved pull request head is rejected.
+  - When the diff is unavailable or truncated, prefer a suggestion over a posted review.
+allowed_tools:
+  - submit_pull_request_review
+  - create_agent_suggestion
+guardrails:
+  review_requires_hydrated_diff: true
+  comments_must_anchor_to_diff: true
+quality_expectations:
+  - Review summaries explain the overall assessment in one short paragraph.
+  - Each comment references the specific changed code it addresses.

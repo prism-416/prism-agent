@@ -3,7 +3,10 @@ from __future__ import annotations
 from capabilities.definitions import ToolPromptDefinition
 from capabilities.tools.base import BaseAgentTool
 from capabilities.tools.dashboard_tools import CreateDashboardInsightTool
-from capabilities.tools.github_tools import LinkPullRequestTool
+from capabilities.tools.github_tools import (
+    LinkPullRequestTool,
+    SubmitPullRequestReviewTool,
+)
 from capabilities.tools.sprint_tools import CreateSprintTool, GenerateSprintReportTool
 from capabilities.tools.suggestion_tools import CreateAgentSuggestionTool
 from capabilities.tools.workitem_tools import (
@@ -32,6 +35,7 @@ class ToolRegistry:
         AddWorkItemCommentTool.name: AddWorkItemCommentTool,
         GenerateSprintReportTool.name: GenerateSprintReportTool,
         LinkPullRequestTool.name: LinkPullRequestTool,
+        SubmitPullRequestReviewTool.name: SubmitPullRequestReviewTool,
         CreateDashboardInsightTool.name: CreateDashboardInsightTool,
     }
 

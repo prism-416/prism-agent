@@ -1,0 +1,38 @@
+kind: workflow
+id: pr.review
+version: 1.0.0
+name: Pull Request Review
+description: Reviews pull request changes and posts grounded review feedback to GitHub.
+model:
+  provider: gemini
+  name: gemini-3.1-pro-preview
+  temperature: 0.1
+output_schema: AgentPlan
+goal: >
+  Inspect the hydrated pull request diff and produce a helpful, line-anchored code
+  review when a pull request is opened, updated, or review is requested.
+system: |
+  You are Prism's AI project manager acting as an authenticated reviewer in the workspace.
+  Ground every comment in the actual diff. Do not approve from diff inspection alone unless policy allows it.
+trigger_types:
+  - domain.pr.opened
+  - domain.pr.synchronize
+  - domain.pr.review_requested
+required_skills:
+  - code_review
+  - risk_detection
+required_context:
+  - workspace
+  - project
+  - project_members
+  - pull_request_event
+  - pull_request_diff
+constraints:
+  - Review only against the hydrated pull_request_diff; treat other PR metadata as event-provided context.
+  - Anchor every review comment to a file path and line present in the diff.
+  - Carry the diff headSha into the review so a moved pull request head is rejected.
+  - Review comments must use the submit_pull_request_review input contract.
+default_execution_mode: suggest
+approval_policy:
+  submit_pull_request_review: user_approval_required
+max_recursion_depth: 10

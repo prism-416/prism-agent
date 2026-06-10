@@ -13,6 +13,14 @@ class PrismApiNotFoundError(RuntimeError):
     """Raised when the Prism API returns 404 for a requested resource."""
 
 
+class PrismApiConflictError(RuntimeError):
+    """Raised when the Prism API returns 409 (e.g. a stale pull request head SHA)."""
+
+
+class PrismApiUnprocessableError(RuntimeError):
+    """Raised when the Prism API returns 422 (e.g. a review comment off the PR diff)."""
+
+
 class PrismApiClient:
     """Prism API boundary.
 
@@ -71,6 +79,9 @@ class PrismApiClient:
                     entities,
                     explicit_value,
                 )
+                continue
+            if context_key == "pull_request_diff":
+                entities[context_key] = self._pull_request_diff_context(event, explicit_value)
                 continue
             entities[context_key] = (
                 explicit_value
@@ -213,6 +224,39 @@ class PrismApiClient:
             payload,
         )
 
+    def get_pull_request(
+        self,
+        project_id: str,
+        pull_number: str | int,
+        *,
+        include_diff: bool = True,
+        include_files: bool = True,
+    ) -> dict[str, Any]:
+        query = _query_string(
+            {
+                "includeDiff": "true" if include_diff else "false",
+                "includeFiles": "true" if include_files else "false",
+            }
+        )
+        return self._request_json(
+            "GET",
+            f"/projects/{quote(project_id, safe='')}/pull-requests/internal/"
+            f"{quote(str(pull_number), safe='')}{query}",
+        )
+
+    def create_pull_request_review(
+        self,
+        project_id: str,
+        pull_number: str | int,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        return self._request_json(
+            "POST",
+            f"/projects/{quote(project_id, safe='')}/pull-requests/internal/"
+            f"{quote(str(pull_number), safe='')}/reviews",
+            payload,
+        )
+
     def create_agent_run(self, workspace_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request_json(
             "POST",
@@ -324,6 +368,14 @@ class PrismApiClient:
                 raise PrismApiNotFoundError(
                     f"Prism API {method} {path} returned 404: {detail}{request_payload}"
                 ) from exc
+            if exc.code == 409:
+                raise PrismApiConflictError(
+                    f"Prism API {method} {path} returned 409: {detail}{request_payload}"
+                ) from exc
+            if exc.code == 422:
+                raise PrismApiUnprocessableError(
+                    f"Prism API {method} {path} returned 422: {detail}{request_payload}"
+                ) from exc
             raise RuntimeError(
                 f"Prism API {method} {path} failed: {exc.code} {detail}{request_payload}"
             ) from exc
@@ -343,6 +395,21 @@ class PrismApiClient:
             "type": context_key,
             "version": event.payload.get("version", 1),
         }
+
+    def _pull_request_diff_context(
+        self,
+        event: BaseRuntimeEvent,
+        explicit_value: Any,
+    ) -> dict[str, Any] | None:
+        if explicit_value is not None:
+            return explicit_value
+        pull_number = _pull_request_number(event.payload)
+        if not (self.is_configured and event.project_id and pull_number is not None):
+            return None
+        try:
+            return self.get_pull_request(event.project_id, pull_number)
+        except PrismApiNotFoundError:
+            return None
 
     def _workspace_members_context(
         self,
@@ -448,6 +515,20 @@ def _format_request_payload(payload: dict[str, Any] | None) -> str:
     if payload is None:
         return ""
     return f" request_payload={json.dumps(payload, sort_keys=True)}"
+
+
+def _pull_request_number(payload: dict[str, Any]) -> str | int | None:
+    for key in ("pullNumber", "pull_number"):
+        value = payload.get(key)
+        if value is not None:
+            return value
+    pull_request = payload.get("pull_request") or payload.get("pullRequest")
+    if isinstance(pull_request, dict):
+        for key in ("number", "pullNumber", "pull_number"):
+            value = pull_request.get(key)
+            if value is not None:
+                return value
+    return None
 
 
 def _payload_context_value(payload: dict[str, Any], context_key: str) -> Any:
