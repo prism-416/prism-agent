@@ -110,27 +110,36 @@ def main(argv: list[str] | None = None) -> int:
     return agent_local(argv)
 
 
+_PIPELINE_FAILURE_TRACES = frozenset(
+    {"event.failed", "action.failed", "plan.failed", "recursion.max_depth"}
+)
+
+
 def _run_feature_provisioning(args: argparse.Namespace) -> int:
     pointer_data = _load_json(Path(args.input_path))
     pointer = FeatureProvisioningPointerEvent.model_validate(pointer_data)
     _reject_placeholder_values(pointer_data, args.offline)
     settings = _settings_for_run(args.live, args.offline)
     container = build_container(settings.model_copy(update={"queue_backend": "memory"}))
-    worker = FeatureProvisioningWorker(
-        payload_store=_payload_store(args, pointer),
-        state_store=container.state_store,
-        recursion_runner=container.recursion_runner,
-    )
 
-    result = worker.handle_pointer(pointer_data)
-    print_trace(container.state_store.traces)
+    # The production entrypoint dispatches one step and lets the queue carry the rest.
+    # The local CLI simulates the whole pipeline in-process by draining the in-memory
+    # queue, so it can print the full trace.
+    event = FeatureProvisioningWorker.resolve_seed_event(_payload_store(args, pointer), pointer)
+    traces = container.recursion_runner.run(event)
+    print_trace(traces)
+
+    failures = [trace for trace in traces if trace.event_name in _PIPELINE_FAILURE_TRACES]
+    if failures:
+        raise RuntimeError(failures[-1].message)
+
     print(
         json.dumps(
             {
                 "ok": True,
-                "request_id": result.request_id,
-                "event_id": result.event_id,
-                "duplicate": result.duplicate,
+                "request_id": pointer.request_id,
+                "event_id": event.event_id,
+                "duplicate": False,
             },
             indent=2,
             sort_keys=True,
