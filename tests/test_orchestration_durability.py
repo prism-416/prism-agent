@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from domain.context import AgentContext, ContextSnapshot
+from domain.events import DomainEvent, EventEnvelope
+from domain.plans import AgentPlan
 from domain.subtasks import SubAgentResult, SubTask, SubTaskStatus, TaskGraph
 from infrastructure.state.memory_state_store import MemoryStateStore
 from infrastructure.state.prism_api_state_store import PrismApiStateStore
@@ -48,6 +51,51 @@ def _graph() -> TaskGraph:
         project_id="p1",
         nodes=[SubTask(node_id="a", status=R)],
     )
+
+
+def test_plan_and_context_snapshot_persist_across_store_instances() -> None:
+    # The queue-separated action invocation runs in a fresh process and must load the
+    # plan + context snapshot the pointer invocation produced. Both round-trip via
+    # agent memories when persistence is enabled.
+    client = _FakeAgentStatePrismClient()
+    writer = _store(client, persist=True)
+
+    source = EventEnvelope.wrap(
+        DomainEvent(
+            event_type="feature.provisioning.requested",
+            workspace_id="w1",
+            project_id="p1",
+        )
+    )
+    context = AgentContext(
+        workspace_id="w1", project_id="p1", source_event=source, workflow_id="wf-1"
+    )
+    snapshot = ContextSnapshot(
+        plan_id="run-1", workspace_id="w1", project_id="p1", workflow_id="wf-1", context=context
+    )
+    plan = AgentPlan(
+        plan_id="run-1",
+        source_event_id="evt-1",
+        workspace_id="w1",
+        project_id="p1",
+        goal="provision",
+        prompt_id="project_manager",
+        prompt_version="1.0.0",
+        context_snapshot_ref=snapshot.ref,
+    )
+    writer.save_plan(plan)
+    writer.save_context_snapshot(snapshot)
+
+    # Fresh store (cold fallback): get_plan replays the plan and, as a side effect,
+    # the context snapshot into the fallback store the action handler reads from.
+    reader = _store(client)
+    restored_plan = reader.get_plan("w1", "run-1")
+    restored_snapshot = reader.get_context_snapshot("w1", snapshot.ref)
+
+    assert restored_plan is not None
+    assert restored_plan.context_snapshot_ref == snapshot.ref
+    assert restored_snapshot is not None
+    assert restored_snapshot.context.workflow_id == "wf-1"
 
 
 def test_task_graph_and_results_persist_across_store_instances() -> None:
