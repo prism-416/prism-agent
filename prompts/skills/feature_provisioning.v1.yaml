@@ -2,25 +2,31 @@ kind: skill
 id: feature_provisioning
 version: 1.0.0
 name: Feature Provisioning
-description: Converts a requested feature specification into a sprint and implementation tasks.
+description: Converts a requested feature specification into a sprint and a complete work item hierarchy.
 instruction: >
-  Turn a hydrated feature provisioning payload into a concise sprint goal and
-  implementation work items that match the selected tools' contracts.
+  Turn a hydrated feature provisioning payload into one sprint and one complete,
+  hierarchical work breakdown. Design the full breakdown first, then commit it with
+  as few actions as possible: one create_sprint action and one create_workitem_tree
+  action that carries every work item, parents and children together.
 reasoning_instructions:
-  - Treat hydrated feature request context as the source of truth.
-  - Create the sprint through the selected sprint tool.
-  - Create work items through the selected work item tool.
-  - Assign teammates only when hydrated member context provides a username, relevant jobNames, and acceptable workspace workload.
-  - Use member_workloads activeItemCount, overdueItemCount, and dueThisWeekItemCount as current load evidence; if workload is missing or unavailable, be conservative and leave ambiguous work unassigned.
+  - Treat the hydrated feature request context as the source of truth; cover its full scope and do not invent scope beyond it.
+  - Decompose top-down. Top-level items are deliverable feature areas or milestones; their children are concrete implementation tasks a single person can finish in roughly half a day to two days.
+  - Aim for 3 to 6 top-level items with 2 to 6 child tasks each. A real feature almost never breaks down into fewer than 8 total items; if you produce fewer, re-check the specification for uncovered scope such as data model, API, UI, integration, testing, and documentation work.
+  - Express the whole hierarchy in a single create_workitem_tree action using items[].children. Do not emit one create_workitem action per item.
+  - Create the sprint with create_sprint before the work item tree, and derive the sprint goal from the feature specification.
+  - Write each description with two sections, "Context" (why the task exists and what it touches) and "Acceptance Criteria" (a concrete, reviewable checklist).
+  - Assign a teammate only when hydrated member context provides a username whose jobNames or role match the task, and member_workloads (activeItemCount, overdueItemCount, dueThisWeekItemCount) show acceptable load; balance assignments across capable members instead of stacking one person.
+  - When capability or workload evidence is missing or ambiguous, leave the item unassigned rather than guessing.
   - Do not attach work items to a sprint unless a selected tool explicitly supports sprint work item mapping.
-  - Keep work item titles concise enough for Prism work item titles.
-  - Put acceptance criteria inside the work item description.
+  - Keep titles concise and outcome-oriented (imperative, under 100 characters).
 allowed_tools:
   - create_sprint
+  - create_workitem_tree
   - create_workitem
   - update_workitem
 guardrails:
-  max_work_items: 12
+  max_work_items: 30
+  max_tree_depth: 3
   work_item_statuses:
     - todo
     - in_progress
@@ -29,6 +35,7 @@ guardrails:
     - archived
 quality_expectations:
   - The sprint has a clear goal derived from featureSpecification.
-  - Each generated work item has an implementation outcome and reviewable acceptance criteria.
+  - The work breakdown covers the entire requested feature scope, including non-coding work it implies (testing, documentation, integration).
+  - Every leaf task has a single clear outcome and reviewable acceptance criteria in its description.
   - Assigned work items include a defensible role and workload match in the action instruction.
-  - Work item payloads conform to the selected tool input contracts.
+  - The whole hierarchy is committed through one create_workitem_tree action whose payload conforms to the tool input contract.

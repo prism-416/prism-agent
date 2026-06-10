@@ -22,6 +22,10 @@ CREATE_WORK_ITEM_FIELDS = {
 
 UPDATE_WORK_ITEM_FIELDS = CREATE_WORK_ITEM_FIELDS
 
+WORK_ITEM_TREE_NODE_FIELDS = CREATE_WORK_ITEM_FIELDS - {"parentId"}
+MAX_WORK_ITEM_TREE_DEPTH = 3
+MAX_WORK_ITEM_TREE_ITEMS = 30
+
 
 class FindDuplicateWorkItemsTool(BaseAgentTool):
     name = "find_duplicate_workitems"
@@ -87,6 +91,119 @@ class CreateWorkItemTool(BaseAgentTool):
             output=output,
             emitted_events=[EventEnvelope.wrap(event)],
         )
+
+
+class CreateWorkItemTreeTool(BaseAgentTool):
+    """Creates a whole work-item hierarchy in one action.
+
+    The planner emits the full breakdown as nested ``items[].children``; this tool
+    walks the tree, creating each parent before its children so the Prism-assigned
+    ``itemId`` becomes the children's ``parentId``. One action commits N items in a
+    single invocation instead of N queue round-trips.
+    """
+
+    name = "create_workitem_tree"
+
+    def execute(self, action: PlannedAction, context: AgentContext) -> ToolResult:
+        project_id = str(action.input.get("projectId") or context.project_id or "")
+        root_parent_id = action.input.get("parentId")
+        items = action.input.get("items")
+        error = _validate_tree_input(items)
+        if error:
+            return ToolResult(
+                plan_id=action.plan_id,
+                action_id=action.action_id,
+                tool_name=self.name,
+                success=False,
+                error=error,
+            )
+
+        requested_by_user_id = _requested_by_user_id(action.input, context)
+        created: list[dict[str, Any]] = []
+        for node in items:
+            self._create_node(
+                node,
+                parent_id=str(root_parent_id) if root_parent_id else None,
+                depth=1,
+                project_id=project_id,
+                context=context,
+                action=action,
+                requested_by_user_id=requested_by_user_id,
+                created=created,
+            )
+
+        event = DomainEvent(
+            event_type="workitem.tree.created",
+            workspace_id=context.workspace_id,
+            project_id=context.project_id,
+            payload={
+                "itemIds": [item["itemId"] for item in created],
+                "createdCount": len(created),
+                "rootParentId": root_parent_id,
+            },
+            causality=context.source_event.event.causality.child(context.source_event.event_id),
+        )
+        return ToolResult(
+            plan_id=action.plan_id,
+            action_id=action.action_id,
+            tool_name=self.name,
+            success=True,
+            output={
+                "projectId": project_id,
+                "createdCount": len(created),
+                "items": created,
+            },
+            emitted_events=[EventEnvelope.wrap(event)],
+        )
+
+    def _create_node(
+        self,
+        node: dict[str, Any],
+        *,
+        parent_id: str | None,
+        depth: int,
+        project_id: str,
+        context: AgentContext,
+        action: PlannedAction,
+        requested_by_user_id: str | None,
+        created: list[dict[str, Any]],
+    ) -> None:
+        payload = _filter_payload(node, WORK_ITEM_TREE_NODE_FIELDS)
+        payload["title"] = str(node.get("title") or "Generated task")[:100]
+        payload.setdefault("description", str(node.get("description") or action.instruction))
+        if parent_id:
+            payload["parentId"] = parent_id
+        if self.prism_client and self.prism_client.is_configured:
+            if requested_by_user_id:
+                payload.setdefault("requestedByUserId", requested_by_user_id)
+            output = self.prism_client.create_work_item(project_id, payload)
+        else:
+            output = {
+                "itemId": f"local-{action.action_id}-{len(created) + 1}",
+                "projectId": project_id,
+                "workspaceId": context.workspace_id,
+                **payload,
+            }
+        item_id = str(output.get("itemId") or output.get("id") or f"local-{action.action_id}")
+        created.append(
+            {
+                "itemId": item_id,
+                "parentId": parent_id,
+                "depth": depth,
+                "title": payload["title"],
+            }
+        )
+        for child in node.get("children") or []:
+            self._create_node(
+                child,
+                parent_id=item_id,
+                depth=depth + 1,
+                project_id=project_id,
+                context=context,
+                action=action,
+                requested_by_user_id=requested_by_user_id,
+                created=created,
+            )
 
 
 class UpdateWorkItemTool(BaseAgentTool):
@@ -202,6 +319,36 @@ class AddWorkItemCommentTool(BaseAgentTool):
                 "body": action.input.get("body") or action.input.get("comment"),
             },
         )
+
+
+def _validate_tree_input(items: Any) -> str | None:
+    """Reject malformed trees before any item is created, so a bad plan fails atomically."""
+    if not isinstance(items, list) or not items:
+        return "create_workitem_tree requires a non-empty 'items' list."
+    count = 0
+
+    def _walk(nodes: list[Any], depth: int) -> str | None:
+        nonlocal count
+        if depth > MAX_WORK_ITEM_TREE_DEPTH:
+            return f"Work item tree exceeds max depth of {MAX_WORK_ITEM_TREE_DEPTH}."
+        for node in nodes:
+            if not isinstance(node, dict):
+                return "Every work item tree node must be an object."
+            if not str(node.get("title") or "").strip():
+                return "Every work item tree node requires a non-empty title."
+            count += 1
+            if count > MAX_WORK_ITEM_TREE_ITEMS:
+                return f"Work item tree exceeds max size of {MAX_WORK_ITEM_TREE_ITEMS} items."
+            children = node.get("children")
+            if children is not None and not isinstance(children, list):
+                return "Work item tree 'children' must be a list."
+            if children:
+                error = _walk(children, depth + 1)
+                if error:
+                    return error
+        return None
+
+    return _walk(items, 1)
 
 
 def _filter_payload(input_data: Any, allowed_fields: set[str]) -> dict[str, Any]:

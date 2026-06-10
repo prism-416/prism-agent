@@ -178,7 +178,7 @@ def test_agent_local_uses_input_json_ids_for_api_calls(
     assert all("project-local" not in url for url in urls)
     create_payload = json.loads(create_run_call[2].decode("utf-8"))
     assert create_payload["agentType"] == "project_manager"
-    assert create_payload["objective"].startswith("Break down a product story")
+    assert create_payload["objective"].startswith("Break the source work item")
     assert create_payload["triggerType"] == "event"
     assert create_payload["status"] == "running"
     assert _is_uuid(create_payload["runId"])
