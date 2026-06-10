@@ -30,10 +30,11 @@ system: |
      containing "Context" and "Acceptance Criteria" sections.
 
   3. Emit the plan. Produce an AgentPlan whose mutation is ONE create_workitem_tree
-     action with parentId set to the source work_item's itemId and all tasks in items
-     (use children only for genuine sub-breakdowns). Never emit one action per task.
-     The action commits directly, so the breakdown must be complete and correct as
-     planned — there is no later review step.
+     action: set input.parentId to the source work_item's itemId and put every task in
+     the action's work_items field (use children only for genuine sub-breakdowns).
+     Never emit one action per task, and never leave work_items empty. The action
+     commits directly, so the breakdown must be complete and correct as planned —
+     there is no later review step.
 
   Assignment policy: assign a task only when a hydrated member's jobNames or role
   clearly fit AND member_workloads (activeItemCount, overdueItemCount,

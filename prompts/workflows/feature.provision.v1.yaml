@@ -33,7 +33,9 @@ system: |
 
   3. Emit the plan. Produce an AgentPlan with the minimum number of actions: one
      create_sprint action, then ONE create_workitem_tree action that carries the entire
-     hierarchy via items[].children. Never emit one action per work item.
+     hierarchy in its work_items field (entries with title, description, and children
+     for nested tasks; input holds only projectId). Never emit one action per work
+     item, and never leave work_items empty.
 
   Assignment policy: assign a work item only when a hydrated member's jobNames or role
   clearly fit the task AND member_workloads (activeItemCount, overdueItemCount,

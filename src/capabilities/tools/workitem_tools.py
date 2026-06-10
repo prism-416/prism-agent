@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
+from uuid import UUID
 
 from capabilities.tools.base import BaseAgentTool
-from domain.actions import PlannedAction
+from domain.actions import PlannedAction, WorkItemLeafDraft
 from domain.context import AgentContext
 from domain.events import DomainEvent, EventEnvelope
+from domain.plans import AgentPlan
 from domain.results import ToolResult
 
 CREATE_WORK_ITEM_FIELDS = {
@@ -26,6 +29,11 @@ UPDATE_WORK_ITEM_FIELDS = CREATE_WORK_ITEM_FIELDS
 WORK_ITEM_TREE_NODE_FIELDS = CREATE_WORK_ITEM_FIELDS - {"parentId"}
 MAX_WORK_ITEM_TREE_DEPTH = 3
 MAX_WORK_ITEM_TREE_ITEMS = 30
+
+WORK_ITEM_PRIORITIES = {"low", "medium", "high", "urgent"}
+WORK_ITEM_STATUSES = {"todo", "in_progress", "in_review", "done", "archived"}
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}")
+_MEMBER_ENTITY_KEYS = ("project_members", "workspace_members", "member_workloads")
 
 
 class FindDuplicateWorkItemsTool(BaseAgentTool):
@@ -119,17 +127,20 @@ class CreateWorkItemTreeTool(BaseAgentTool):
                 error=error,
             )
 
+        root_parent_id = _valid_uuid_or_none(root_parent_id)
         requested_by_user_id = _requested_by_user_id(action.input, context)
+        known_usernames = _known_member_usernames(context)
         created: list[dict[str, Any]] = []
         for node in items:
             self._create_node(
                 node,
-                parent_id=str(root_parent_id) if root_parent_id else None,
+                parent_id=root_parent_id,
                 depth=1,
                 project_id=project_id,
                 context=context,
                 action=action,
                 requested_by_user_id=requested_by_user_id,
+                known_usernames=known_usernames,
                 created=created,
             )
 
@@ -167,11 +178,13 @@ class CreateWorkItemTreeTool(BaseAgentTool):
         context: AgentContext,
         action: PlannedAction,
         requested_by_user_id: str | None,
+        known_usernames: set[str],
         created: list[dict[str, Any]],
     ) -> None:
         payload = _filter_payload(node, WORK_ITEM_TREE_NODE_FIELDS)
         payload["title"] = str(node.get("title") or "Generated task")[:100]
         payload.setdefault("description", str(node.get("description") or action.instruction))
+        _normalize_node_payload(payload, known_usernames)
         if parent_id:
             payload["parentId"] = parent_id
         if self.prism_client and self.prism_client.is_configured:
@@ -203,6 +216,7 @@ class CreateWorkItemTreeTool(BaseAgentTool):
                 context=context,
                 action=action,
                 requested_by_user_id=requested_by_user_id,
+                known_usernames=known_usernames,
                 created=created,
             )
 
@@ -325,6 +339,60 @@ class AddWorkItemCommentTool(BaseAgentTool):
 _TREE_ITEMS_KEYS = ("items", "workItems", "work_items", "tasks", "children")
 _TREE_ROOT_ONLY_FIELDS = {"projectId", "parentId", "requestedByUserId"}
 
+_DRAFT_FIELD_TO_ITEM_KEY = {
+    "start_date": "startDate",
+    "due_date": "dueDate",
+    "priority": "priority",
+    "status": "status",
+}
+
+
+def work_item_drafts_to_items(drafts: list[WorkItemLeafDraft]) -> list[dict[str, Any]]:
+    """Convert typed planner drafts into the tool's input.items node shape."""
+    return [_draft_to_node(draft) for draft in drafts]
+
+
+def _draft_to_node(draft: WorkItemLeafDraft) -> dict[str, Any]:
+    node: dict[str, Any] = {"title": draft.title, "description": draft.description}
+    for field, key in _DRAFT_FIELD_TO_ITEM_KEY.items():
+        value = getattr(draft, field)
+        if value:
+            node[key] = value
+    if draft.assignee_usernames:
+        node["assigneeUsernames"] = list(draft.assignee_usernames)
+    if draft.label_names:
+        node["labelNames"] = list(draft.label_names)
+    children = getattr(draft, "children", None)
+    if children:
+        node["children"] = [_draft_to_node(child) for child in children]
+    return node
+
+
+def materialize_work_item_tree_actions(plan: AgentPlan) -> AgentPlan:
+    """Fill input.items for create_workitem_tree actions from typed work_items drafts.
+
+    Structured output cannot populate the untyped action input, so the planner puts
+    the breakdown in ``PlannedAction.work_items``; this turns it into the tool's
+    input contract right after plan generation. An input that already carries a
+    coercible items list wins, so explicitly planned inputs are never overwritten.
+    """
+    updated_plan = plan
+    for action in plan.actions:
+        if action.tool_name != CreateWorkItemTreeTool.name:
+            continue
+        if not action.work_items:
+            continue
+        if coerce_work_item_tree_items(action.input):
+            continue
+        updated_input = {
+            **action.input,
+            "items": work_item_drafts_to_items(action.work_items),
+        }
+        updated_plan = updated_plan.replace_action(
+            action.model_copy(update={"input": updated_input})
+        )
+    return updated_plan
+
 
 def coerce_work_item_tree_items(input_data: dict[str, Any]) -> list[Any] | None:
     """Best-effort extraction of the work item node list from a planned action input.
@@ -356,6 +424,73 @@ def coerce_work_item_tree_items(input_data: dict[str, Any]) -> list[Any] | None:
         }
         return [node]
     return None
+
+
+def _valid_uuid_or_none(value: Any) -> str | None:
+    """Backend parentId is @IsUUID; a hallucinated ref must not fail every root create."""
+    if value is None:
+        return None
+    try:
+        return str(UUID(str(value)))
+    except ValueError:
+        return None
+
+
+def _known_member_usernames(context: AgentContext) -> set[str]:
+    usernames: set[str] = set()
+    for key in _MEMBER_ENTITY_KEYS:
+        members = context.entities.get(key)
+        if not isinstance(members, list):
+            continue
+        for member in members:
+            if isinstance(member, dict):
+                username = str(member.get("username") or "").strip()
+                if username:
+                    usernames.add(username)
+    return usernames
+
+
+def _normalize_node_payload(payload: dict[str, Any], known_usernames: set[str]) -> None:
+    """Drop or fix values the Prism work item API would reject with a 400/404.
+
+    One bad enum, date, or hallucinated assignee must not abort the whole tree:
+    the API validates priority/status against lowercase enums, dates as strict ISO
+    strings, and every assignee username against project membership.
+    """
+    for field, allowed in (("priority", WORK_ITEM_PRIORITIES), ("status", WORK_ITEM_STATUSES)):
+        if field in payload:
+            value = str(payload[field]).strip().lower()
+            if value in allowed:
+                payload[field] = value
+            else:
+                payload.pop(field)
+    for field in ("startDate", "dueDate"):
+        if field in payload and not _ISO_DATE_RE.match(str(payload[field]).strip()):
+            payload.pop(field)
+    if "assigneeUsernames" in payload:
+        raw = payload["assigneeUsernames"]
+        usernames = raw if isinstance(raw, list) else [raw]
+        cleaned: list[str] = []
+        for username in usernames:
+            name = str(username or "").strip()
+            if name and name not in cleaned and (not known_usernames or name in known_usernames):
+                cleaned.append(name)
+        if cleaned:
+            payload["assigneeUsernames"] = cleaned
+        else:
+            payload.pop("assigneeUsernames")
+    if "labelNames" in payload:
+        raw = payload["labelNames"]
+        labels = raw if isinstance(raw, list) else [raw]
+        cleaned_labels: list[str] = []
+        for label in labels:
+            name = str(label or "").strip()[:30]
+            if name and name not in cleaned_labels:
+                cleaned_labels.append(name)
+        if cleaned_labels:
+            payload["labelNames"] = cleaned_labels
+        else:
+            payload.pop("labelNames")
 
 
 def validate_work_item_tree(items: Any) -> str | None:

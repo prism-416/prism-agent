@@ -8,6 +8,7 @@ from capabilities.skills import RuntimeSkill
 from capabilities.tools.base import BaseAgentTool
 from capabilities.tools.workitem_tools import (
     coerce_work_item_tree_items,
+    materialize_work_item_tree_actions,
     validate_work_item_tree,
 )
 from domain.context import AgentContext
@@ -42,10 +43,10 @@ def _plan_defect(plan: AgentPlan) -> str | None:
         error = validate_work_item_tree(coerce_work_item_tree_items(action.input))
         if error:
             return (
-                f"The previous create_workitem_tree action input was invalid: {error} "
-                "Put the complete work item breakdown into input.items as a JSON array "
-                "of node objects, each with a title, a description, and an optional "
-                "children list of nodes with the same shape."
+                f"The previous create_workitem_tree action was invalid: {error} "
+                "Put the complete work item breakdown into the action's work_items "
+                "field: a non-empty array of objects, each with a title, a "
+                "description, and an optional children array of nested work items."
             )
     return None
 
@@ -78,6 +79,7 @@ class RuntimePlanningAgent:
         try:
             for _ in range(PLAN_GENERATION_ATTEMPTS):
                 plan = self._generate_plan_with_pydantic_ai(context, context_snapshot_ref)
+                plan = materialize_work_item_tree_actions(plan)
                 defect = _plan_defect(plan)
                 if defect is None:
                     return plan
