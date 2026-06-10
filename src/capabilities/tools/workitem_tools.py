@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from capabilities.tools.base import BaseAgentTool
@@ -107,8 +108,8 @@ class CreateWorkItemTreeTool(BaseAgentTool):
     def execute(self, action: PlannedAction, context: AgentContext) -> ToolResult:
         project_id = str(action.input.get("projectId") or context.project_id or "")
         root_parent_id = action.input.get("parentId")
-        items = action.input.get("items")
-        error = _validate_tree_input(items)
+        items = coerce_work_item_tree_items(action.input)
+        error = validate_work_item_tree(items)
         if error:
             return ToolResult(
                 plan_id=action.plan_id,
@@ -321,7 +322,43 @@ class AddWorkItemCommentTool(BaseAgentTool):
         )
 
 
-def _validate_tree_input(items: Any) -> str | None:
+_TREE_ITEMS_KEYS = ("items", "workItems", "work_items", "tasks", "children")
+_TREE_ROOT_ONLY_FIELDS = {"projectId", "parentId", "requestedByUserId"}
+
+
+def coerce_work_item_tree_items(input_data: dict[str, Any]) -> list[Any] | None:
+    """Best-effort extraction of the work item node list from a planned action input.
+
+    Structured planning leaves ``input`` an untyped object, so models sometimes put
+    the breakdown under an alternate key, encode it as a JSON string, or emit the
+    input as a single node. Accept those shapes instead of failing the action.
+    """
+    for key in _TREE_ITEMS_KEYS:
+        # An input carrying its own title is a single node, so its "children" key
+        # belongs to that node rather than being an alias for the items list.
+        if key == "children" and str(input_data.get("title") or "").strip():
+            break
+        value = input_data.get(key)
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except ValueError:
+                continue
+        if isinstance(value, dict):
+            value = [value]
+        if isinstance(value, list) and value:
+            return value
+    if str(input_data.get("title") or "").strip():
+        node = {
+            field: value
+            for field, value in input_data.items()
+            if field not in _TREE_ROOT_ONLY_FIELDS
+        }
+        return [node]
+    return None
+
+
+def validate_work_item_tree(items: Any) -> str | None:
     """Reject malformed trees before any item is created, so a bad plan fails atomically."""
     if not isinstance(items, list) or not items:
         return "create_workitem_tree requires a non-empty 'items' list."
