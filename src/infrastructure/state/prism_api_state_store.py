@@ -11,7 +11,8 @@ from domain.events import utc_now
 from domain.plans import AgentPlan, PlanStatus
 from domain.results import ToolResult, TraceEvent
 from domain.subtasks import SubAgentResult, SubTask, SubTaskStatus, TaskGraph, TaskGraphAdvance
-from infrastructure.prism_api.client import PrismApiClient, PrismApiNotFoundError
+from infrastructure.prism_api.client import PrismApiClient
+from infrastructure.state.agent_memory_store import AgentStateMemoryStore, PrismAgentMemoryStore
 from infrastructure.state.base import StateStore
 from infrastructure.state.memory_state_store import MemoryStateStore
 
@@ -28,12 +29,17 @@ class PrismApiStateStore(StateStore):
         fallback_store: StateStore | None = None,
         *,
         persist_agent_memories: bool = False,
+        memory_store: AgentStateMemoryStore | None = None,
     ) -> None:
         if not prism_client.is_configured:
             raise ValueError("PRISM_API_BASE_URL is required when STATE_BACKEND=prism_api.")
         self.prism_client = prism_client
         self.fallback_store = fallback_store or MemoryStateStore()
         self.persist_agent_memories = persist_agent_memories
+        # Durable transport for plan/context-snapshot/task-graph records. Defaults to
+        # Prism's agent-memories (bearer scope); the internal-token function runtime
+        # injects an Object Storage transport instead.
+        self.memory_store = memory_store or PrismAgentMemoryStore(prism_client)
         self._idempotency_locations: dict[str, tuple[str, str]] = {}
 
     @property
@@ -86,20 +92,11 @@ class PrismApiStateStore(StateStore):
         return advance
 
     def _restore_run_state(self, workspace_id: str, run_id: str) -> None:
-        try:
-            state = self._fetch_agent_run_state(workspace_id, run_id)
-        except RuntimeError:
-            state = None
-        if state is not None:
-            self._load_state_memories(workspace_id, run_id, state)
+        self._load_state_memories(workspace_id, run_id, self._run_state(workspace_id, run_id))
 
     def get_plan(self, workspace_id: str, plan_id: str) -> AgentPlan | None:
-        try:
-            state = self._fetch_agent_run_state(workspace_id, plan_id)
-        except RuntimeError:
-            state = None
-        if state is not None:
-            self._load_state_memories(workspace_id, plan_id, state)
+        state = self._run_state(workspace_id, plan_id)
+        self._load_state_memories(workspace_id, plan_id, state)
 
         plan = self.fallback_store.get_plan(workspace_id, plan_id)
         if plan is None:
@@ -164,13 +161,9 @@ class PrismApiStateStore(StateStore):
         candidate_run_id = run_id or self._run_id_from_idempotency_key(key)
         if candidate_run_id is None:
             return False
-        try:
-            state = self._fetch_agent_run_state(workspace_id, candidate_run_id)
-        except RuntimeError:
-            return False
-        if state is None:
-            return False
-        self._load_state_memories(workspace_id, candidate_run_id, state)
+        self._load_state_memories(
+            workspace_id, candidate_run_id, self._run_state(workspace_id, candidate_run_id)
+        )
         return self.fallback_store.check_idempotency_key(key)
 
     def record_workspace_idempotency_key(
@@ -186,11 +179,11 @@ class PrismApiStateStore(StateStore):
             return
         self._persist_idempotency_key(workspace_id, candidate_run_id, key)
 
-    def _fetch_agent_run_state(self, workspace_id: str, plan_id: str) -> dict[str, Any] | None:
+    def _run_state(self, workspace_id: str, run_id: str) -> dict[str, Any]:
         try:
-            return self.prism_client.get_agent_run_state(workspace_id, plan_id)
-        except PrismApiNotFoundError:
-            return None
+            return self.memory_store.fetch_run_state(workspace_id, run_id) or {}
+        except RuntimeError:
+            return {}
 
     def _hydrate_plan_state(
         self,
@@ -399,7 +392,7 @@ class PrismApiStateStore(StateStore):
         }
         if step_id:
             payload["stepId"] = _state_memory_id(run_id, step_id, "step")
-        self.prism_client.upsert_agent_memory(workspace_id, payload)
+        self.memory_store.put_memory(workspace_id, run_id, payload)
 
     @staticmethod
     def _run_id_from_idempotency_key(key: str) -> str | None:

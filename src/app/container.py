@@ -18,6 +18,7 @@ from application.validator import Validator
 from infrastructure.config.settings import Settings
 from infrastructure.llm.gemini_model_provider import GeminiModelProvider
 from infrastructure.llm.pydantic_ai_agent_factory import PydanticAIAgentFactory
+from infrastructure.object_storage.oci_agent_memory_store import ObjectStorageAgentMemoryStore
 from infrastructure.observability.logging_config import configure_logging
 from infrastructure.prism_api.client import PrismApiClient
 from infrastructure.queue.base import Queue
@@ -147,7 +148,17 @@ def _build_queue(settings: Settings) -> Queue:
 def _build_state_store(settings: Settings, prism_client: PrismApiClient) -> StateStore:
     if settings.state_backend == "memory":
         return MemoryStateStore()
+    # The internal-token runtime can't write Prism agent-memories (bearer scope), so
+    # when a bucket is configured, persist durable agent state to Object Storage using
+    # the function's own OCI credentials. Falls back to the Prism transport otherwise.
+    memory_store = None
+    if settings.object_storage_namespace and settings.object_storage_bucket_name:
+        memory_store = ObjectStorageAgentMemoryStore(
+            settings.object_storage_namespace,
+            settings.object_storage_bucket_name,
+        )
     return PrismApiStateStore(
         prism_client,
         persist_agent_memories=settings.persist_agent_memories,
+        memory_store=memory_store,
     )
