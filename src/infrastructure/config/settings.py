@@ -26,6 +26,10 @@ class Settings(BaseModel):
     discord_webhook_url: str | None = None
     log_level: str = "INFO"
     log_traces: bool = False
+    # Persist plan/context-snapshot/task-graph state as agent memories so it survives
+    # across function invocations (required for queue-separated processing). Needs the
+    # API token to allow agent-memory writes.
+    persist_agent_memories: bool = True
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -47,4 +51,5 @@ class Settings(BaseModel):
             discord_webhook_url=os.getenv("DISCORD_WEBHOOK_URL") or None,
             log_level=os.getenv("LOG_LEVEL", "INFO"),
             log_traces=os.getenv("LOG_TRACES", "true").lower() == "true",
+            persist_agent_memories=os.getenv("PERSIST_AGENT_MEMORIES", "true").lower() == "true",
         )

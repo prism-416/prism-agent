@@ -172,6 +172,9 @@ def _settings_for_run(live: bool, offline: bool) -> Settings:
             "app_env": "local",
             "state_backend": "prism_api",
             "queue_backend": "memory",
+            # The CLI drains the run in-process, so it never needs cross-invocation
+            # durability and must not write agent memories to the live API.
+            "persist_agent_memories": False,
         }
     )
 

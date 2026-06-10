@@ -147,4 +147,7 @@ def _build_queue(settings: Settings) -> Queue:
 def _build_state_store(settings: Settings, prism_client: PrismApiClient) -> StateStore:
     if settings.state_backend == "memory":
         return MemoryStateStore()
-    return PrismApiStateStore(prism_client)
+    return PrismApiStateStore(
+        prism_client,
+        persist_agent_memories=settings.persist_agent_memories,
+    )
