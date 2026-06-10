@@ -18,6 +18,7 @@ from application.validator import Validator
 from infrastructure.config.settings import Settings
 from infrastructure.llm.gemini_model_provider import GeminiModelProvider
 from infrastructure.llm.pydantic_ai_agent_factory import PydanticAIAgentFactory
+from infrastructure.observability.logging_config import configure_logging
 from infrastructure.prism_api.client import PrismApiClient
 from infrastructure.queue.base import Queue
 from infrastructure.queue.memory_queue import MemoryQueue
@@ -27,6 +28,7 @@ from infrastructure.registries.skill_registry import SkillRegistry
 from infrastructure.registries.tool_registry import ToolRegistry
 from infrastructure.registries.workflow_registry import WorkflowRegistry
 from infrastructure.state.base import StateStore
+from infrastructure.state.logging_state_store import LoggingStateStore
 from infrastructure.state.memory_state_store import MemoryStateStore
 from infrastructure.state.prism_api_state_store import PrismApiStateStore
 
@@ -60,6 +62,8 @@ def build_container(settings: Settings | None = None) -> AppContainer:
     queue = _build_queue(settings)
     prism_client = PrismApiClient(settings.prism_api_base_url, settings.prism_api_token)
     state_store = _build_state_store(settings, prism_client)
+    if settings.log_traces:
+        state_store = LoggingStateStore(state_store, configure_logging(settings.log_level))
     prompt_registry = PromptRegistry()
     tool_registry = ToolRegistry.from_prompt_registry(prompt_registry, prism_client=prism_client)
     skill_registry = SkillRegistry.from_prompt_registry(prompt_registry)

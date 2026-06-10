@@ -24,6 +24,8 @@ class Settings(BaseModel):
     prism_api_base_url: str | None = None
     prism_api_token: str | None = None
     discord_webhook_url: str | None = None
+    log_level: str = "INFO"
+    log_traces: bool = False
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -43,4 +45,6 @@ class Settings(BaseModel):
             prism_api_base_url=os.getenv("PRISM_API_BASE_URL"),
             prism_api_token=os.getenv("PRISM_API_TOKEN") or None,
             discord_webhook_url=os.getenv("DISCORD_WEBHOOK_URL") or None,
+            log_level=os.getenv("LOG_LEVEL", "INFO"),
+            log_traces=os.getenv("LOG_TRACES", "true").lower() == "true",
         )
