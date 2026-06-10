@@ -16,6 +16,7 @@ from application.subagent_runner import SubAgentRunner
 from application.trigger_policy import TriggerPolicy
 from application.validator import Validator
 from infrastructure.config.settings import Settings
+from infrastructure.llm.gemini_embeddings import GeminiQueryEmbedder
 from infrastructure.llm.gemini_model_provider import GeminiModelProvider
 from infrastructure.llm.pydantic_ai_agent_factory import PydanticAIAgentFactory
 from infrastructure.object_storage.oci_agent_memory_store import ObjectStorageAgentMemoryStore
@@ -66,7 +67,10 @@ def build_container(settings: Settings | None = None) -> AppContainer:
     if settings.log_traces:
         state_store = LoggingStateStore(state_store, configure_logging(settings.log_level))
     prompt_registry = PromptRegistry()
-    tool_registry = ToolRegistry.from_prompt_registry(prompt_registry, prism_client=prism_client)
+    embedder = GeminiQueryEmbedder(settings)
+    tool_registry = ToolRegistry.from_prompt_registry(
+        prompt_registry, prism_client=prism_client, embedder=embedder
+    )
     skill_registry = SkillRegistry.from_prompt_registry(prompt_registry)
     workflow_registry = WorkflowRegistry.from_prompt_registry(prompt_registry)
     model_provider = GeminiModelProvider(settings)

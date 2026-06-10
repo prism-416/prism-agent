@@ -636,3 +636,92 @@ class _CapturingPrismClient:
     def create_work_item(self, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         self.calls.append(("create_work_item", project_id, payload))
         return {"itemId": "item-1", **payload}
+
+
+def test_prism_api_client_hydrates_slimmed_project_work_items(monkeypatch) -> None:
+    calls = []
+    responses = {
+        "https://api.example.test/projects/project-1/work-items/internal?limit=100": {
+            "data": {
+                "items": [
+                    {
+                        "itemId": "item-1",
+                        "workspaceId": "workspace-1",
+                        "projectId": "project-1",
+                        "parentId": None,
+                        "title": "Notification center",
+                        "description": "A long description that should not enter context.",
+                        "status": "in_progress",
+                        "priority": "high",
+                        "sortOrder": 1,
+                        "dueDate": "2026-06-30",
+                        "assigneeUsernames": ["alex"],
+                        "labelNames": ["notifications"],
+                        "createdAt": "2026-06-01T00:00:00Z",
+                    }
+                ],
+                "total": 1,
+                "limit": 100,
+                "offset": 0,
+            }
+        },
+    }
+
+    def fake_urlopen(request, timeout):
+        _ = timeout
+        url = request.full_url
+        calls.append(url)
+        if url in responses:
+            return _FakeResponse(json.dumps(responses[url]).encode("utf-8"))
+        return _FakeResponse(b'{"data":[]}')
+
+    monkeypatch.setattr("infrastructure.prism_api.client.urlopen", fake_urlopen)
+    event = DomainEvent(
+        event_type="feature.provisioning.requested",
+        workspace_id="workspace-1",
+        project_id="project-1",
+        payload={},
+    )
+
+    entities = PrismApiClient(
+        "https://api.example.test",
+        "secret-token",
+    ).fetch_context_entities(event, ["project_work_items"])
+
+    assert calls == ["https://api.example.test/projects/project-1/work-items/internal?limit=100"]
+    assert entities["project_work_items"] == [
+        {
+            "itemId": "item-1",
+            "title": "Notification center",
+            "status": "in_progress",
+            "priority": "high",
+            "dueDate": "2026-06-30",
+            "assigneeUsernames": ["alex"],
+            "labelNames": ["notifications"],
+        }
+    ]
+
+
+def test_project_work_items_prefer_payload_and_skip_api_when_unconfigured() -> None:
+    explicit = [{"itemId": "item-9", "title": "Existing"}]
+    event = DomainEvent(
+        event_type="feature.provisioning.requested",
+        workspace_id="workspace-1",
+        project_id="project-1",
+        payload={"projectWorkItems": explicit},
+    )
+
+    configured = PrismApiClient("https://api.example.test", "secret-token")
+    assert configured.fetch_context_entities(event, ["project_work_items"]) == {
+        "project_work_items": explicit
+    }
+
+    bare_event = DomainEvent(
+        event_type="feature.provisioning.requested",
+        workspace_id="workspace-1",
+        project_id="project-1",
+        payload={},
+    )
+    assert PrismApiClient().fetch_context_entities(bare_event, ["project_work_items"]) == {
+        "project_work_items": []
+    }

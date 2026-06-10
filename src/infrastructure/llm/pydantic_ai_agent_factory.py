@@ -4,6 +4,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 
 from capabilities.definitions import WorkflowPromptDefinition
+from capabilities.plan_quality import plan_quality_issues
 from capabilities.skills import RuntimeSkill
 from capabilities.tools.base import BaseAgentTool
 from capabilities.tools.workitem_tools import (
@@ -25,6 +26,16 @@ _EMPTY_PLAN_FEEDBACK = (
     "for feature provisioning, task decomposition, or other actionable "
     "workflows unless the hydrated context proves there is no safe action."
 )
+
+
+def _quality_review_feedback(issues: list[str]) -> str:
+    numbered = "\n".join(f"{index}. {issue}" for index, issue in enumerate(issues, start=1))
+    return (
+        "A reviewer found these problems in your previous plan:\n"
+        f"{numbered}\n"
+        "Regenerate the plan fixing every problem above while keeping the rest of "
+        "its content."
+    )
 
 
 def _plan_defect(plan: AgentPlan) -> str | None:
@@ -76,6 +87,7 @@ class RuntimePlanningAgent:
         _ = approval_policy
         plan: AgentPlan | None = None
         self._retry_feedback = None
+        quality_review_used = False
         try:
             for attempt in range(1, PLAN_GENERATION_ATTEMPTS + 1):
                 try:
@@ -88,9 +100,18 @@ class RuntimePlanningAgent:
                     continue
                 plan = materialize_work_item_tree_actions(plan)
                 defect = _plan_defect(plan)
-                if defect is None:
-                    return plan
-                self._retry_feedback = defect
+                if defect is not None:
+                    self._retry_feedback = defect
+                    continue
+                # Critic pass: one revision round for soft quality findings, then
+                # accept the plan rather than fail the run on imperfect output.
+                if not quality_review_used and attempt < PLAN_GENERATION_ATTEMPTS:
+                    issues = plan_quality_issues(plan, context.entities)
+                    if issues:
+                        quality_review_used = True
+                        self._retry_feedback = _quality_review_feedback(issues)
+                        continue
+                return plan
             return plan
         finally:
             self._retry_feedback = None

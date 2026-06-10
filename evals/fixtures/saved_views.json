@@ -1,0 +1,32 @@
+{
+  "name": "saved_views",
+  "payload": {
+    "featureSpecification": "Work Item Saved Views & Advanced Filtering\n\nAdd saved views to the project work item board so each member can filter, sort, and reuse board configurations.\n\n1. Filtering\n- Filter work items by status, priority, assignee, label, due date range, and parent item.\n- Multiple filters combine with AND; values within one filter combine with OR.\n- Filters apply to both board view and list view without a full page reload.\n\n2. Saved views\n- A member can save the current filter + sort combination as a named view (max 20 per project).\n- Views can be personal or shared with the whole project.\n- Shared views are visible to all project members; only the creator or a project admin can edit or delete them.\n- The last used view is remembered per member and restored on next visit.\n\n3. Sorting\n- Sort by due date, priority, created date, or manual order.\n- Sort preference is stored as part of the saved view.\n\n4. API & data\n- New saved_view resource: CRUD routes scoped to the project, with personal/shared visibility rules enforced server-side.\n- Filter queries must use indexed columns; board responses for a 500-item project should return within 300ms.\n\n5. UI\n- Filter bar above the board with active-filter chips and a clear-all button.\n- View switcher dropdown showing personal and shared views in separate sections.\n- Empty state when a view's filters match no items.\n\n6. Quality\n- Unit tests for filter query building and visibility rules.\n- E2E test covering create view, switch view, and shared view visibility for another member.\n- Update user documentation for the new board controls.",
+    "workspaceMembers": [
+      {"userId": "u-alice", "username": "alice", "fullName": "Alice Kim", "role": "member", "jobIds": ["j-be"], "jobNames": ["Backend Engineer"]},
+      {"userId": "u-bob", "username": "bob", "fullName": "Bob Lee", "role": "member", "jobIds": ["j-fe"], "jobNames": ["Frontend Engineer"]},
+      {"userId": "u-carol", "username": "carol", "fullName": "Carol Park", "role": "member", "jobIds": ["j-ds"], "jobNames": ["Product Designer"]},
+      {"userId": "u-dave", "username": "dave", "fullName": "Dave Choi", "role": "member", "jobIds": ["j-qa"], "jobNames": ["QA Engineer"]}
+    ],
+    "workspaceJobs": [
+      {"jobId": "j-be", "name": "Backend Engineer"},
+      {"jobId": "j-fe", "name": "Frontend Engineer"},
+      {"jobId": "j-ds", "name": "Product Designer"},
+      {"jobId": "j-qa", "name": "QA Engineer"}
+    ],
+    "memberWorkloads": [
+      {"userId": "u-alice", "username": "alice", "role": "member", "jobNames": ["Backend Engineer"], "activeItemCount": 3, "overdueItemCount": 0, "dueThisWeekItemCount": 1},
+      {"userId": "u-bob", "username": "bob", "role": "member", "jobNames": ["Frontend Engineer"], "activeItemCount": 2, "overdueItemCount": 0, "dueThisWeekItemCount": 1},
+      {"userId": "u-carol", "username": "carol", "role": "member", "jobNames": ["Product Designer"], "activeItemCount": 1, "overdueItemCount": 0, "dueThisWeekItemCount": 0},
+      {"userId": "u-dave", "username": "dave", "role": "member", "jobNames": ["QA Engineer"], "activeItemCount": 1, "overdueItemCount": 0, "dueThisWeekItemCount": 0}
+    ]
+  },
+  "expectations": {
+    "expect_sprint": true,
+    "min_total_items": 15,
+    "max_total_items": 100,
+    "min_top_level_items": 4,
+    "min_route_tasks": 4,
+    "required_keywords": ["saved view", "filter"]
+  }
+}

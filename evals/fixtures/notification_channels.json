@@ -1,0 +1,42 @@
+{
+  "name": "notification_channels",
+  "payload": {
+    "featureSpecification": "External Notification Channels & Subscription Rules\n\nExtend the existing In-App Notification & Activity Feed System with outbound delivery channels (Slack, Discord, browser push) and fine-grained per-project subscription rules. Reuse the existing notification event records, per-user preference model, and quiet-hours logic.\n\n1. Channel connections\n- A workspace admin can connect a Slack incoming webhook, a Discord webhook, or browser push.\n- Connections are stored per workspace with display name, channel type, webhook URL (encrypted at rest), and enabled flag.\n- Admins can test a connection (send a sample message), disable it, or delete it.\n- Browser push uses the standard Web Push flow: per-device subscription registration, public key exposure, and stale-subscription cleanup on delivery failure.\n\n2. Delivery routing\n- Each notification type can be routed to any combination of channels, configured per workspace by admins.\n- Outbound delivery reuses the existing notification event records: a routing step decides which channel deliveries to enqueue.\n- Deliveries are queued and retried up to 3 times with backoff; permanently failed deliveries are recorded with the failure reason.\n- Quiet hours from the existing preference model apply to browser push; Slack/Discord are workspace-level.\n\n3. Message formatting\n- Slack/Discord messages render actor, action, target entity title, project name, and a deep link back into the app.\n- Status changes show old to new status; due-date warnings show the due date; agent run completions show outcome.\n- Batched events render as one message with an occurrence count.\n\n4. Subscription rules per project\n- A user can follow or mute individual projects: muted projects send nothing to any channel, followed projects bypass type-level off for in-app notifications.\n- A user can follow a single work item to receive all events on it and its children.\n- Following/muting is exposed on the project page and the work item detail view.\n\n5. Admin & settings UI\n- Workspace settings: channel connection list with add/test/disable/delete, and a routing matrix (notification type by channel).\n- User settings: browser push opt-in per device, project follow/mute list, followed work items list.\n- A log view of the last 50 failed deliveries with reason and retry status.\n\n6. Quality\n- Unit tests for routing decisions, retry/backoff, quiet-hours interaction with push, and follow/mute precedence.\n- E2E test: connect a webhook, assign a work item, message delivered with correct deep link; mute project, no message.\n- Webhook calls must never block the originating mutation; deliveries are strictly asynchronous.\n- Document channel setup, the routing matrix, and follow/mute precedence.",
+    "workspaceMembers": [
+      {"userId": "u-alice", "username": "alice", "fullName": "Alice Kim", "role": "member", "jobIds": ["j-be"], "jobNames": ["Backend Engineer"]},
+      {"userId": "u-bob", "username": "bob", "fullName": "Bob Lee", "role": "member", "jobIds": ["j-fe"], "jobNames": ["Frontend Engineer"]},
+      {"userId": "u-carol", "username": "carol", "fullName": "Carol Park", "role": "member", "jobIds": ["j-ds"], "jobNames": ["Product Designer"]},
+      {"userId": "u-dave", "username": "dave", "fullName": "Dave Choi", "role": "member", "jobIds": ["j-qa"], "jobNames": ["QA Engineer"]}
+    ],
+    "workspaceJobs": [
+      {"jobId": "j-be", "name": "Backend Engineer"},
+      {"jobId": "j-fe", "name": "Frontend Engineer"},
+      {"jobId": "j-ds", "name": "Product Designer"},
+      {"jobId": "j-qa", "name": "QA Engineer"}
+    ],
+    "memberWorkloads": [
+      {"userId": "u-alice", "username": "alice", "role": "member", "jobNames": ["Backend Engineer"], "activeItemCount": 3, "overdueItemCount": 0, "dueThisWeekItemCount": 1},
+      {"userId": "u-bob", "username": "bob", "role": "member", "jobNames": ["Frontend Engineer"], "activeItemCount": 2, "overdueItemCount": 0, "dueThisWeekItemCount": 1},
+      {"userId": "u-carol", "username": "carol", "role": "member", "jobNames": ["Product Designer"], "activeItemCount": 1, "overdueItemCount": 0, "dueThisWeekItemCount": 0},
+      {"userId": "u-dave", "username": "dave", "role": "member", "jobNames": ["QA Engineer"], "activeItemCount": 1, "overdueItemCount": 0, "dueThisWeekItemCount": 0}
+    ],
+    "projectWorkItems": [
+      {"itemId": "11111111-1111-4111-8111-111111111111", "title": "In-App Notification & Activity Feed System", "status": "in_progress", "priority": "high"},
+      {"itemId": "22222222-2222-4222-8222-222222222222", "parentId": "11111111-1111-4111-8111-111111111111", "title": "Notification event records & storage", "status": "done", "priority": "high"},
+      {"itemId": "33333333-3333-4333-8333-333333333333", "parentId": "11111111-1111-4111-8111-111111111111", "title": "Per-user notification preferences with quiet hours", "status": "done", "priority": "medium"},
+      {"itemId": "44444444-4444-4444-8444-444444444444", "parentId": "11111111-1111-4111-8111-111111111111", "title": "Notification center UI with unread badge", "status": "in_progress", "priority": "medium"}
+    ]
+  },
+  "expectations": {
+    "expect_sprint": true,
+    "min_total_items": 18,
+    "max_total_items": 100,
+    "min_top_level_items": 4,
+    "min_route_tasks": 5,
+    "required_keywords": ["webhook", "push"],
+    "forbidden_existing_titles": [
+      "Notification event records & storage",
+      "Per-user notification preferences with quiet hours"
+    ]
+  }
+}

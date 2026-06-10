@@ -80,6 +80,9 @@ class PrismApiClient:
                     explicit_value,
                 )
                 continue
+            if context_key == "project_work_items":
+                entities[context_key] = self._project_work_items_context(event, explicit_value)
+                continue
             if context_key == "pull_request_diff":
                 entities[context_key] = self._pull_request_diff_context(event, explicit_value)
                 continue
@@ -197,6 +200,22 @@ class PrismApiClient:
                 "offset": 0,
             }
         return {"items": [], "total": 0, "limit": 0, "offset": 0}
+
+    def find_similar_work_items(
+        self,
+        project_id: str,
+        embedding: list[float],
+        *,
+        limit: int = 8,
+    ) -> list[dict[str, Any]]:
+        data = self._request_json(
+            "POST",
+            f"/projects/{quote(project_id, safe='')}/work-items/internal/similar",
+            {"embedding": embedding, "limit": limit},
+        )
+        if isinstance(data, list):
+            return [item for item in data if isinstance(item, dict)]
+        return []
 
     def create_sprint(self, workspace_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request_json(
@@ -447,6 +466,32 @@ class PrismApiClient:
             return explicit_jobs
         return _extract_items(explicit_value)
 
+    def _project_work_items_context(
+        self,
+        event: BaseRuntimeEvent,
+        explicit_value: Any,
+    ) -> list[dict[str, Any]]:
+        """Existing project work items, slimmed for planning context.
+
+        Descriptions are dropped and the list is capped so a large backlog cannot
+        blow up the planning prompt; titles and hierarchy are what duplicate
+        avoidance and attachment decisions need.
+        """
+        explicit_items = _extract_items(explicit_value)
+        if explicit_items or not self.is_configured or not event.project_id:
+            return explicit_items
+        try:
+            result = self.search_work_items(
+                event.project_id,
+                {"limit": PROJECT_WORK_ITEMS_CONTEXT_LIMIT},
+            )
+        except RuntimeError:
+            return []
+        items = result.get("items")
+        if not isinstance(items, list):
+            return []
+        return [_slim_work_item(item) for item in items if isinstance(item, dict)]
+
     def _member_workloads_context(
         self,
         workspace_id: str,
@@ -529,6 +574,25 @@ def _pull_request_number(payload: dict[str, Any]) -> str | int | None:
             if value is not None:
                 return value
     return None
+
+
+PROJECT_WORK_ITEMS_CONTEXT_LIMIT = 100
+_WORK_ITEM_CONTEXT_FIELDS = (
+    "itemId",
+    "parentId",
+    "title",
+    "status",
+    "priority",
+    "dueDate",
+    "assigneeUsernames",
+    "labelNames",
+)
+
+
+def _slim_work_item(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        field: item[field] for field in _WORK_ITEM_CONTEXT_FIELDS if item.get(field) is not None
+    }
 
 
 def _payload_context_value(payload: dict[str, Any], context_key: str) -> Any:
