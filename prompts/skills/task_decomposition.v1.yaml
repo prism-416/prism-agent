@@ -12,7 +12,7 @@ reasoning_instructions:
   - Preserve product intent and avoid inventing scope; everything you create must trace back to the source work item.
   - Cover the source item's full scope. A typical story yields 4 to 8 child tasks; include implied work such as data changes, API changes, UI changes, tests, and documentation when the story touches them.
   - Each leaf task should be finishable by one person in roughly half a day to two days; merge micro-tasks and split multi-day work.
-  - Use one create_workitem_tree action with parentId set to the source work item's itemId; use items[].children only when a child genuinely needs its own sub-breakdown.
+  - Use one create_workitem_tree action with input.parentId set to the source work item's itemId and every task in the action's work_items field; use children only when a child genuinely needs its own sub-breakdown.
   - Check sibling_work_items and child_work_items (or find_duplicate_workitems) first, and do not recreate work that already exists.
   - Write each description with two sections, "Context" and "Acceptance Criteria"; acceptance criteria must be concrete enough to review against.
   - Assign a teammate only when hydrated member context provides a username whose jobNames or role match the task, and member_workloads (activeItemCount, overdueItemCount, dueThisWeekItemCount) show acceptable load; balance assignments across capable members.

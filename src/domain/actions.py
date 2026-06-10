@@ -20,6 +20,35 @@ class ActionStatus(StrEnum):
     STALE = "stale"
 
 
+class WorkItemLeafDraft(BaseModel):
+    """A work item the planner proposes, in a schema structured output can enforce.
+
+    The generic ``PlannedAction.input`` is an untyped object, which Gemini's response
+    schema cannot constrain — models reliably leave it empty. Work item breakdowns
+    therefore travel in the typed ``PlannedAction.work_items`` field and are
+    materialized into the tool's ``input.items`` contract by the runtime.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str
+    description: str = ""
+    start_date: str | None = None
+    due_date: str | None = None
+    priority: str | None = None
+    status: str | None = None
+    assignee_usernames: list[str] = Field(default_factory=list)
+    label_names: list[str] = Field(default_factory=list)
+
+
+class WorkItemChildDraft(WorkItemLeafDraft):
+    children: list[WorkItemLeafDraft] = Field(default_factory=list)
+
+
+class WorkItemDraft(WorkItemLeafDraft):
+    children: list[WorkItemChildDraft] = Field(default_factory=list)
+
+
 class PlannedAction(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -29,6 +58,14 @@ class PlannedAction(BaseModel):
     tool_name: str
     instruction: str
     input: dict[str, Any] = Field(default_factory=dict)
+    work_items: list[WorkItemDraft] = Field(
+        default_factory=list,
+        description=(
+            "For create_workitem_tree actions: the full work item breakdown. "
+            "Each entry needs a title and description; use children to nest "
+            "sub-items. Leave empty for other tools."
+        ),
+    )
     depends_on: list[str] = Field(default_factory=list)
     requires_approval: bool = False
     status: ActionStatus = ActionStatus.PENDING

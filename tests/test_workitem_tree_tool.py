@@ -4,7 +4,8 @@ import json
 from typing import Any
 
 from application.context_provider import ContextProvider
-from domain.actions import PlannedAction
+from capabilities.tools.workitem_tools import materialize_work_item_tree_actions
+from domain.actions import PlannedAction, WorkItemDraft
 from domain.context import AgentContext
 from domain.events import DomainEvent, EventEnvelope
 from domain.plans import AgentPlan
@@ -103,10 +104,11 @@ def test_tree_tool_creates_hierarchy_locally(prompts_path) -> None:
 def test_tree_tool_links_children_to_api_assigned_parent_ids(prompts_path) -> None:
     client = _RecordingPrismClient()
     tool = _tree_tool(prompts_path, prism_client=client)
+    story_uuid = "0b6f9a3c-7c1d-4f6e-9a39-2f6d8f6f2a11"
     action = _action(
         {
             "projectId": "p1",
-            "parentId": "story-1",
+            "parentId": story_uuid,
             "requestedByUserId": "u1",
             "items": [
                 {
@@ -125,13 +127,64 @@ def test_tree_tool_links_children_to_api_assigned_parent_ids(prompts_path) -> No
     assert result.success is True
     parent_call = client.calls[0][1]
     child_call = client.calls[1][1]
-    assert parent_call["parentId"] == "story-1"
+    assert parent_call["parentId"] == story_uuid
     assert parent_call["assigneeUsernames"] == ["alice"]
     assert parent_call["requestedByUserId"] == "u1"
     assert "not_in_contract" not in parent_call
     assert "children" not in parent_call
     assert child_call["parentId"] == "api-item-1"
     assert child_call["requestedByUserId"] == "u1"
+
+
+def test_tree_tool_normalizes_values_the_api_would_reject(prompts_path) -> None:
+    client = _RecordingPrismClient()
+    tool = _tree_tool(prompts_path, prism_client=client)
+    event = DomainEvent(
+        event_type="story.created",
+        workspace_id="w1",
+        project_id="p1",
+        payload={
+            "entity_versions": {"story:s1": 1},
+            "project_members": [{"username": "alice"}, {"username": "bob"}],
+        },
+    )
+    prompt_registry = PromptRegistry(prompts_path)
+    workflow = WorkflowRegistry.from_prompt_registry(prompt_registry).get("story.decompose")
+    context = (
+        ContextProvider(PrismApiClient(), prompt_registry)
+        .hydrate(EventEnvelope.wrap(event), workflow)
+        .context
+    )
+    action = _action(
+        {
+            "projectId": "p1",
+            "parentId": "not-a-uuid",
+            "items": [
+                {
+                    "title": "Task",
+                    "description": "AC",
+                    "priority": "High",
+                    "status": "Backlog",
+                    "startDate": "soon",
+                    "dueDate": "2026-06-30",
+                    "assigneeUsernames": ["alice", "ghost-user", "alice"],
+                    "labelNames": ["", "feature"],
+                }
+            ],
+        }
+    )
+
+    result = tool.execute(action, context)
+
+    assert result.success is True
+    payload = client.calls[0][1]
+    assert "parentId" not in payload
+    assert payload["priority"] == "high"
+    assert "status" not in payload
+    assert "startDate" not in payload
+    assert payload["dueDate"] == "2026-06-30"
+    assert payload["assigneeUsernames"] == ["alice"]
+    assert payload["labelNames"] == ["feature"]
 
 
 def test_tree_tool_rejects_empty_or_invalid_trees(prompts_path) -> None:
@@ -217,6 +270,156 @@ def test_tree_tool_coerces_common_input_shapes(prompts_path) -> None:
     assert single_node.output["createdCount"] == 2
 
 
+def test_typed_work_items_materialize_into_tool_input() -> None:
+    drafts = [
+        WorkItemDraft.model_validate(
+            {
+                "title": "Build API",
+                "description": "AC",
+                "priority": "high",
+                "assignee_usernames": ["alice"],
+                "children": [
+                    {
+                        "title": "Design schema",
+                        "description": "AC",
+                        "due_date": "2026-06-20",
+                        "children": [{"title": "Review schema", "description": "AC"}],
+                    }
+                ],
+            }
+        ),
+        WorkItemDraft(title="Build UI", description="AC"),
+    ]
+    plan = AgentPlan(
+        source_event_id="e1",
+        workspace_id="w1",
+        project_id="p1",
+        goal="g",
+        prompt_id="feature.provision",
+        prompt_version="1.0.0",
+        context_snapshot_ref="ref",
+    )
+    tree_action = PlannedAction(
+        plan_id=plan.plan_id,
+        action_type="mutation",
+        tool_name="create_workitem_tree",
+        instruction="Create the breakdown.",
+        input={"projectId": "p1"},
+        work_items=drafts,
+        idempotency_key="k1",
+    )
+    other_action = PlannedAction(
+        plan_id=plan.plan_id,
+        action_type="mutation",
+        tool_name="create_sprint",
+        instruction="Create sprint.",
+        input={"name": "Sprint"},
+        work_items=[WorkItemDraft(title="Ignored", description="AC")],
+        idempotency_key="k2",
+    )
+    plan = plan.model_copy(update={"actions": [tree_action, other_action]})
+
+    materialized = materialize_work_item_tree_actions(plan)
+
+    items = materialized.get_action(tree_action.action_id).input["items"]
+    assert [item["title"] for item in items] == ["Build API", "Build UI"]
+    assert items[0]["priority"] == "high"
+    assert items[0]["assigneeUsernames"] == ["alice"]
+    child = items[0]["children"][0]
+    assert child["dueDate"] == "2026-06-20"
+    assert child["children"][0]["title"] == "Review schema"
+    assert "items" not in materialized.get_action(other_action.action_id).input
+
+
+def test_materialize_keeps_explicit_input_items() -> None:
+    plan = AgentPlan(
+        source_event_id="e1",
+        workspace_id="w1",
+        project_id="p1",
+        goal="g",
+        prompt_id="feature.provision",
+        prompt_version="1.0.0",
+        context_snapshot_ref="ref",
+    )
+    action = PlannedAction(
+        plan_id=plan.plan_id,
+        action_type="mutation",
+        tool_name="create_workitem_tree",
+        instruction="Create the breakdown.",
+        input={"projectId": "p1", "items": [{"title": "Explicit", "description": "AC"}]},
+        work_items=[WorkItemDraft(title="Draft", description="AC")],
+        idempotency_key="k1",
+    )
+    plan = plan.model_copy(update={"actions": [action]})
+
+    materialized = materialize_work_item_tree_actions(plan)
+
+    items = materialized.get_action(action.action_id).input["items"]
+    assert [item["title"] for item in items] == ["Explicit"]
+
+
+class _TypedDraftPlanningAgent(RuntimePlanningAgent):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.attempts = 0
+
+    def _generate_plan_with_pydantic_ai(self, context, context_snapshot_ref):
+        self.attempts += 1
+        plan = AgentPlan(
+            source_event_id=context.source_event.event_id,
+            workspace_id=context.workspace_id,
+            project_id=context.project_id,
+            goal=self.workflow_prompt.goal,
+            prompt_id=self.workflow_prompt.id,
+            prompt_version=self.workflow_prompt.version,
+            context_snapshot_ref=context_snapshot_ref,
+        )
+        return plan.model_copy(
+            update={
+                "actions": [
+                    PlannedAction(
+                        plan_id=plan.plan_id,
+                        action_type="mutation",
+                        tool_name="create_workitem_tree",
+                        instruction="Create the breakdown.",
+                        input={"projectId": context.project_id},
+                        work_items=[WorkItemDraft(title="Build feature", description="AC")],
+                        idempotency_key="typed:create_workitem_tree:1",
+                    )
+                ]
+            }
+        )
+
+
+def test_planning_accepts_typed_work_items_without_retry(prompts_path) -> None:
+    prompt_registry = PromptRegistry(prompts_path)
+    workflow_prompt = prompt_registry.get_workflow("feature.provision", "1.0.0")
+    workflow = WorkflowRegistry.from_prompt_registry(prompt_registry).get("feature.provision")
+    event = DomainEvent(
+        event_type="feature.provisioning.requested",
+        workspace_id="w1",
+        project_id="p1",
+        payload={"featureSpecification": "Add saved views."},
+        idempotency_key="req-typed",
+    )
+    snapshot = ContextProvider(PrismApiClient(), prompt_registry).hydrate(
+        EventEnvelope.wrap(event), workflow
+    )
+    skill_registry = SkillRegistry.from_prompt_registry(prompt_registry)
+    tool_registry = ToolRegistry.from_prompt_registry(prompt_registry)
+    agent = _TypedDraftPlanningAgent(
+        workflow_prompt,
+        skill_registry.select(["feature_provisioning"]),
+        tool_registry.select(skill_registry.allowed_tools_for(["feature_provisioning"])),
+        GeminiModelProvider(Settings()),
+    )
+
+    plan = agent.generate_plan(snapshot.context, snapshot.ref, approval_policy=None)
+
+    assert agent.attempts == 1
+    assert plan.actions[0].input["items"][0]["title"] == "Build feature"
+
+
 class _TreeRetryPlanningAgent(RuntimePlanningAgent):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -282,7 +485,8 @@ def test_planning_retries_tree_action_without_items(prompts_path) -> None:
     assert agent.attempts == 2
     assert plan.actions[0].input["items"]
     assert "Planning retry feedback:" not in agent.user_prompts[0]
-    assert "create_workitem_tree action input was invalid" in agent.user_prompts[1]
+    assert "create_workitem_tree action was invalid" in agent.user_prompts[1]
+    assert "work_items" in agent.user_prompts[1]
 
 
 def test_tree_tool_is_registered_and_allowed_by_pm_skills(prompts_path) -> None:

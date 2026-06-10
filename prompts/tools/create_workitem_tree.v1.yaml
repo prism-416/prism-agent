@@ -9,9 +9,9 @@ description: >
   work breakdown at once instead of one item per action.
 usage:
   - Use when the plan produces more than one related work item; put the whole breakdown in a single action.
-  - The action input MUST contain a non-empty items array; an input without items is invalid and does nothing.
-  - 'Example input: {"projectId": "<project uuid>", "items": [{"title": "Build saved view API", "description": "Context: ...\nAcceptance Criteria: ...", "priority": "high", "children": [{"title": "Design saved_view table", "description": "..."}]}, {"title": "Build filter bar UI", "description": "..."}]}'
-  - Use items[].children to express hierarchy. Parent ids are resolved automatically; never invent parentId values for tree nodes.
+  - Put the complete breakdown into the action-level work_items field (NOT inside input); each entry has title, description, optional priority/status/dates/assignee_usernames/label_names, and an optional children array of nested entries. An action with empty work_items is invalid and does nothing.
+  - Set input to the routing fields only, such as projectId and the optional top-level parentId.
+  - Use children to express hierarchy. Parent ids are resolved automatically; never invent parentId values for tree nodes.
   - Set parentId only at the top level, and only to attach the whole tree under an existing work item (for example the source story).
   - Put acceptance criteria inside each item's description.
   - Use assigneeUsernames only with usernames taken from hydrated member context, after checking jobNames, role, and member_workloads evidence.
