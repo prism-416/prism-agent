@@ -130,6 +130,8 @@ class CreateWorkItemTreeTool(BaseAgentTool):
         root_parent_id = _valid_uuid_or_none(root_parent_id)
         requested_by_user_id = _requested_by_user_id(action.input, context)
         known_usernames = _known_member_usernames(context)
+        for node in items:
+            _rollup_assignee_usernames(node, known_usernames)
         created: list[dict[str, Any]] = []
         for node in items:
             self._create_node(
@@ -450,6 +452,35 @@ def _known_member_usernames(context: AgentContext) -> set[str]:
     return usernames
 
 
+def _clean_usernames(raw: Any, known_usernames: set[str]) -> list[str]:
+    usernames = raw if isinstance(raw, list) else [raw]
+    cleaned: list[str] = []
+    for username in usernames:
+        name = str(username or "").strip()
+        if name and name not in cleaned and (not known_usernames or name in known_usernames):
+            cleaned.append(name)
+    return cleaned
+
+
+def _rollup_assignee_usernames(node: dict[str, Any], known_usernames: set[str]) -> list[str]:
+    """Propagate every descendant's assignees onto its ancestors.
+
+    A parent work item must list everyone working under it, so each node's
+    assigneeUsernames becomes its own (first) plus the union of its children's,
+    computed bottom-up before any item is created.
+    """
+    merged = _clean_usernames(node.get("assigneeUsernames"), known_usernames)
+    for child in node.get("children") or []:
+        if not isinstance(child, dict):
+            continue
+        for name in _rollup_assignee_usernames(child, known_usernames):
+            if name not in merged:
+                merged.append(name)
+    if merged:
+        node["assigneeUsernames"] = merged
+    return merged
+
+
 def _normalize_node_payload(payload: dict[str, Any], known_usernames: set[str]) -> None:
     """Drop or fix values the Prism work item API would reject with a 400/404.
 
@@ -468,13 +499,7 @@ def _normalize_node_payload(payload: dict[str, Any], known_usernames: set[str]) 
         if field in payload and not _ISO_DATE_RE.match(str(payload[field]).strip()):
             payload.pop(field)
     if "assigneeUsernames" in payload:
-        raw = payload["assigneeUsernames"]
-        usernames = raw if isinstance(raw, list) else [raw]
-        cleaned: list[str] = []
-        for username in usernames:
-            name = str(username or "").strip()
-            if name and name not in cleaned and (not known_usernames or name in known_usernames):
-                cleaned.append(name)
+        cleaned = _clean_usernames(payload["assigneeUsernames"], known_usernames)
         if cleaned:
             payload["assigneeUsernames"] = cleaned
         else:

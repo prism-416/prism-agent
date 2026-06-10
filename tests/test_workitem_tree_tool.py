@@ -136,6 +136,49 @@ def test_tree_tool_links_children_to_api_assigned_parent_ids(prompts_path) -> No
     assert child_call["requestedByUserId"] == "u1"
 
 
+def test_child_assignees_roll_up_to_ancestors(prompts_path) -> None:
+    client = _RecordingPrismClient()
+    tool = _tree_tool(prompts_path, prism_client=client)
+    action = _action(
+        {
+            "projectId": "p1",
+            "items": [
+                {
+                    "title": "Notifications area",
+                    "description": "D",
+                    "assigneeUsernames": ["lead"],
+                    "children": [
+                        {
+                            "title": "Server routes",
+                            "description": "D",
+                            "children": [
+                                {
+                                    "title": "Implement GET /notifications",
+                                    "description": "D",
+                                    "assigneeUsernames": ["alice"],
+                                },
+                                {
+                                    "title": "Implement POST /notifications/read",
+                                    "description": "D",
+                                    "assigneeUsernames": ["bob", "alice"],
+                                },
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    result = tool.execute(action, _context(prompts_path))
+
+    assert result.success is True
+    by_title = {call[1]["title"]: call[1] for call in client.calls}
+    assert by_title["Notifications area"]["assigneeUsernames"] == ["lead", "alice", "bob"]
+    assert by_title["Server routes"]["assigneeUsernames"] == ["alice", "bob"]
+    assert by_title["Implement GET /notifications"]["assigneeUsernames"] == ["alice"]
+
+
 def test_tree_tool_normalizes_values_the_api_would_reject(prompts_path) -> None:
     client = _RecordingPrismClient()
     tool = _tree_tool(prompts_path, prism_client=client)
