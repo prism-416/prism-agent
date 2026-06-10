@@ -45,6 +45,18 @@ The prompts are aligned against `https://api.prizmatic.app/dev/docs-json`.
   - queue message is a pointer event with `payloadObjectName` and optional `payloadVersionId`
   - hydrated payload in Object Storage is the source of truth for `featureSpecification`, workspace context, and project context
   - runtime hydrates workspace member, job, and workload context from the Prism API when available
+- Pull request review:
+  - `GET /projects/{projectId}/pull-requests/internal/{pullNumber}` with optional
+    `includeDiff` and `includeFiles` query flags returns PR metadata plus per-file
+    `patch` diffs, `commits`, and a `truncated` flag for size-capped diffs
+  - `POST /projects/{projectId}/pull-requests/internal/{pullNumber}/reviews` posts a
+    GitHub review; body is `requestedByUserId`, `headSha`, `event`
+    (`COMMENT`/`APPROVE`/`REQUEST_CHANGES`), `summary`, and optional line-anchored
+    `comments` (`path`, `line`, optional `side`, `body`)
+  - the runtime hydrates `pull_request_diff` context from the GET endpoint and posts
+    reviews through `submit_pull_request_review`
+  - `409` means the PR head SHA moved since review (treated as stale-context); `422`
+    means a comment anchor is not in the diff
 - Agent runtime state:
   - `GET /workspaces/{workspaceId}/agent-runs/internal/{runId}/state`
   - `PATCH /workspaces/{workspaceId}/agent-runs/internal/{runId}/status`

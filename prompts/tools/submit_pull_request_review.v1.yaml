@@ -1,0 +1,23 @@
+kind: tool
+id: submit_pull_request_review
+version: 1.0.0
+name: Submit Pull Request Review
+description: Posts an AI code review back to the GitHub pull request as a review with optional line-anchored comments.
+usage:
+  - Use after analyzing the hydrated pull_request_diff to deliver review feedback.
+  - Set event to COMMENT for neutral feedback, REQUEST_CHANGES for blocking issues, or APPROVE only when policy allows.
+  - Anchor each comment to a file path and line that appears in the PR diff.
+  - Always send the headSha from the reviewed pull_request_diff so a moved head is rejected.
+do_not_use:
+  - Do not use without a hydrated pull_request_diff to ground the review.
+  - Do not approve a pull request from diff inspection alone unless policy permits it.
+  - Do not anchor comments to paths or lines that are not in the PR diff.
+risk_level: high
+approval_policy: user_approval_required
+input_contract:
+  projectId: string
+  pullNumber: number
+  headSha: string
+  event: COMMENT | APPROVE | REQUEST_CHANGES
+  summary: string
+  comments: optional list of objects with path string, line number, body string, and optional side LEFT or RIGHT

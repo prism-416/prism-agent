@@ -28,6 +28,19 @@ def test_event_router_routes_allowed_workflow() -> None:
     assert route.workflow.workflow_id == "pr.status_sync"
 
 
+def test_event_router_routes_pull_request_review_triggers() -> None:
+    router = EventRouter(TriggerPolicy(), WorkflowRegistry.with_defaults())
+    for event_type in ("pr.opened", "pr.synchronize", "pr.review_requested"):
+        route = router.route(
+            EventEnvelope.wrap(
+                DomainEvent(event_type=event_type, workspace_id="w1", project_id="p1")
+            )
+        )
+        assert route.decision.allowed is True, event_type
+        assert route.workflow is not None, event_type
+        assert route.workflow.workflow_id == "pr.review", event_type
+
+
 def test_memory_queue_enqueues_dequeues_and_acks() -> None:
     queue = MemoryQueue()
     envelope = EventEnvelope.wrap(

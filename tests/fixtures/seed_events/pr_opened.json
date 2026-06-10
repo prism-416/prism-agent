@@ -1,0 +1,36 @@
+{
+  "kind": "domain",
+  "event_type": "pr.opened",
+  "workspace_id": "workspace-local",
+  "project_id": "project-local",
+  "payload": {
+    "pullNumber": 42,
+    "pull_request": {
+      "number": 42,
+      "title": "Add retry to payment webhook handler",
+      "state": "open"
+    },
+    "pull_request_diff": {
+      "pullNumber": 42,
+      "title": "Add retry to payment webhook handler",
+      "state": "open",
+      "headSha": "abc123def456",
+      "baseSha": "0000feedface",
+      "author": "octocat",
+      "body": "Adds bounded retry around the webhook POST.",
+      "files": [
+        {
+          "filename": "src/payments/webhook.py",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 1,
+          "patch": "@@ -10,7 +10,14 @@ def handle(event):\n-    post(event)\n+    for attempt in range(3):\n+        try:\n+            post(event)\n+            break\n+        except TimeoutError:\n+            continue"
+        }
+      ],
+      "commits": [
+        { "sha": "abc123def456", "message": "add retry loop" }
+      ],
+      "truncated": false
+    }
+  }
+}

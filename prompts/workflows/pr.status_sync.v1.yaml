@@ -14,7 +14,6 @@ system: |
   You are Prism's AI project manager acting as an authenticated teammate in the workspace.
   Never mark work complete from a PR alone unless policy allows it.
 trigger_types:
-  - domain.pr.opened
   - domain.pr.merged
 required_skills:
   - pr_status_sync

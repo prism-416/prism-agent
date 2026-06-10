@@ -182,6 +182,89 @@ def test_prism_api_client_uses_internal_agent_run_endpoints(
     assert request.full_url == expected_url
 
 
+def test_prism_api_client_gets_pull_request_with_diff_query(monkeypatch) -> None:
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["request"] = request
+        _ = timeout
+        return _FakeResponse(b'{"data":{"pullNumber":42,"headSha":"abc"}}')
+
+    monkeypatch.setattr("infrastructure.prism_api.client.urlopen", fake_urlopen)
+
+    result = PrismApiClient("https://api.example.test", "secret-token").get_pull_request(
+        "project-1",
+        42,
+    )
+
+    request = captured["request"]
+    headers = dict(request.header_items())
+    assert result == {"pullNumber": 42, "headSha": "abc"}
+    assert request.get_method() == "GET"
+    assert request.full_url == (
+        "https://api.example.test/projects/project-1/pull-requests/internal/42"
+        "?includeDiff=true&includeFiles=true"
+    )
+    assert headers["X-internal-api-token"] == "secret-token"
+
+
+def test_prism_api_client_creates_pull_request_review(monkeypatch) -> None:
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["request"] = request
+        _ = timeout
+        return _FakeResponse(b'{"data":{"reviewId":"r1","url":"https://gh/r1"}}')
+
+    monkeypatch.setattr("infrastructure.prism_api.client.urlopen", fake_urlopen)
+
+    result = PrismApiClient("https://api.example.test", "secret-token").create_pull_request_review(
+        "project-1",
+        42,
+        {"headSha": "abc", "event": "COMMENT", "summary": "Looks good"},
+    )
+
+    request = captured["request"]
+    assert result == {"reviewId": "r1", "url": "https://gh/r1"}
+    assert request.get_method() == "POST"
+    assert request.full_url == (
+        "https://api.example.test/projects/project-1/pull-requests/internal/42/reviews"
+    )
+
+
+@pytest.mark.parametrize(
+    ("status_code", "expected_error"),
+    [
+        (409, "PrismApiConflictError"),
+        (422, "PrismApiUnprocessableError"),
+    ],
+)
+def test_prism_api_client_maps_pull_request_review_errors(
+    monkeypatch, status_code: int, expected_error: str
+) -> None:
+    from infrastructure.prism_api import client as client_module
+
+    def fake_urlopen(request, timeout):
+        _ = (request, timeout)
+        raise HTTPError(
+            "https://api.example.test/projects/project-1/pull-requests/internal/42/reviews",
+            status_code,
+            "error",
+            {},
+            BytesIO(b'{"message":"nope"}'),
+        )
+
+    monkeypatch.setattr("infrastructure.prism_api.client.urlopen", fake_urlopen)
+    expected_exc = getattr(client_module, expected_error)
+
+    with pytest.raises(expected_exc):
+        PrismApiClient("https://api.example.test", "secret-token").create_pull_request_review(
+            "project-1",
+            42,
+            {"headSha": "stale", "event": "COMMENT", "summary": "x"},
+        )
+
+
 def test_prism_api_client_upserts_agent_memory_with_bearer_header(
     monkeypatch,
 ) -> None:
