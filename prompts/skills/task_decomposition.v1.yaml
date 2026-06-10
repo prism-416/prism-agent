@@ -11,7 +11,8 @@ instruction: >
 reasoning_instructions:
   - Preserve product intent and avoid inventing scope; everything you create must trace back to the source work item.
   - Cover the source item's full scope. A typical story yields 5 to 15 child tasks; include implied work such as data changes, API changes, UI changes, tests, and documentation when the story touches them.
-  - Decompose to production granularity. Server work becomes one task per API route with the HTTP method and URL path in the title; data work becomes specific tables, migrations, and indexes; UI work becomes individual components, states, and interactions.
+  - Decompose to production granularity. Server work becomes one task per API route with the HTTP method and URL path in the title; enumerate every route the source item implies (list, detail, create, update, delete, state transitions, counts, filters). Data work becomes specific tables, migrations, and indexes; UI work becomes individual components, states, and interactions.
+  - Make each task self-sufficient. A route task's description names the request inputs, response shape, and key validation, permission, and error cases; a UI task names its states, interactions, and the routes it calls; a data task names tables, key columns, constraints, and indexes.
   - Each leaf task should be finishable by one person in roughly half a day to two days; merge micro-tasks and split multi-day work.
   - Use one create_workitem_tree action with input.parentId set to the source work item's itemId and every task in the action's work_items field; use children only when a child genuinely needs its own sub-breakdown.
   - Check sibling_work_items and child_work_items (or find_duplicate_workitems) first, and do not recreate work that already exists.

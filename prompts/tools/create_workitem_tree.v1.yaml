@@ -15,6 +15,7 @@ usage:
   - Set parentId only at the top level, and only to attach the whole tree under an existing work item (for example the source story).
   - Each item's description must expand its title in plain prose with the concrete behavior to deliver; never leave it empty or restate the title.
   - Use assigneeUsernames only with usernames taken from hydrated member context, after checking jobNames, role, and member_workloads evidence.
+  - Assign at the leaf task level; every assignee on a child is automatically added to all of its ancestor items, so parents need no manual copy of child assignees.
   - Leave assigneeUsernames empty when capability or workload evidence is insufficient.
 do_not_use:
   - Do not use for a single small edit to an existing work item; use update_workitem instead.
