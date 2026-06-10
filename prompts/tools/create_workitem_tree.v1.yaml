@@ -13,7 +13,7 @@ usage:
   - Set input to the routing fields only, such as projectId and the optional top-level parentId.
   - Use children to express hierarchy. Parent ids are resolved automatically; never invent parentId values for tree nodes.
   - Set parentId only at the top level, and only to attach the whole tree under an existing work item (for example the source story).
-  - Put acceptance criteria inside each item's description.
+  - Each item's description must expand its title in plain prose with the concrete behavior to deliver; never leave it empty or restate the title.
   - Use assigneeUsernames only with usernames taken from hydrated member context, after checking jobNames, role, and member_workloads evidence.
   - Leave assigneeUsernames empty when capability or workload evidence is insufficient.
 do_not_use:

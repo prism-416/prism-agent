@@ -5,14 +5,14 @@ name: Backlog Analysis
 description: Analyzes backlog overlap, ambiguity, dependencies, and stale work.
 instruction: >
   Compare new or existing work against the backlog for duplicates, dependency conflicts,
-  unclear scope, and missing acceptance criteria.
+  unclear scope, and descriptions too vague to implement from.
 reasoning_instructions:
   - Separate evidence from assumption.
   - Identify duplicate and overlapping work before proposing new items.
   - Avoid churn from minor field changes.
   - Use hydrated work item fields such as itemId, parentId, priority, status, assigneeUsernames, and labelNames.
   - Use selected analysis tools for duplicate checks instead of assuming more context exists.
-  - Treat epic, story, and task as the only valid work item types.
+  - Work items carry no fixed type such as epic or story; hierarchy comes only from parent-child nesting.
 allowed_tools:
   - find_duplicate_workitems
   - create_agent_suggestion
