@@ -41,6 +41,9 @@ jobs:
       FUNCTION_TIMEOUT_SECONDS: ${{ vars.OCI_FUNCTION_TIMEOUT_SECONDS || '300' }}
       OCI_FUNCTION_PLATFORM: ${{ vars.OCI_FUNCTION_PLATFORM || 'linux/amd64' }}
 
+      LOG_GROUP_DISPLAY_NAME: ${{ vars.OCI_LOG_GROUP_NAME || 'prism-agent-logs' }}
+      FUNCTION_LOG_DISPLAY_NAME: ${{ vars.OCI_FUNCTION_LOG_NAME || 'prism-agent-dev-invoke' }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -201,4 +204,54 @@ jobs:
               --timeout-in-seconds "$FUNCTION_TIMEOUT_SECONDS" \
               --force \
               --wait-for-state ACTIVE
+          fi
+
+      # Functions only ship stdout/stderr to OCI Logging when a SERVICE log of
+      # category "invoke" is enabled on the application. The function image alone
+      # produces no fetchable logs without this. Best-effort: a missing IAM policy
+      # must not block the deploy (enable the log once in the Console instead).
+      - name: Ensure function invocation logging
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Log group (idempotent by display name within the compartment).
+          LOG_GROUP_ID="$(oci logging log-group list \
+            --compartment-id "$OCI_COMPARTMENT_OCID" \
+            --display-name "$LOG_GROUP_DISPLAY_NAME" \
+            --query 'data[0].id' --raw-output 2>/dev/null || true)"
+
+          if [ -z "$LOG_GROUP_ID" ] || [ "$LOG_GROUP_ID" = "null" ]; then
+            echo "Creating log group: $LOG_GROUP_DISPLAY_NAME"
+            oci logging log-group create \
+              --compartment-id "$OCI_COMPARTMENT_OCID" \
+              --display-name "$LOG_GROUP_DISPLAY_NAME" \
+              --wait-for-state SUCCEEDED
+            LOG_GROUP_ID="$(oci logging log-group list \
+              --compartment-id "$OCI_COMPARTMENT_OCID" \
+              --display-name "$LOG_GROUP_DISPLAY_NAME" \
+              --query 'data[0].id' --raw-output)"
+          fi
+          echo "Log group: $LOG_GROUP_ID"
+
+          # Service log enabling Functions invocation logs for this application.
+          LOG_ID="$(oci logging log list \
+            --log-group-id "$LOG_GROUP_ID" \
+            --display-name "$FUNCTION_LOG_DISPLAY_NAME" \
+            --query 'data[0].id' --raw-output 2>/dev/null || true)"
+
+          if [ -z "$LOG_ID" ] || [ "$LOG_ID" = "null" ]; then
+            echo "Creating invocation log: $FUNCTION_LOG_DISPLAY_NAME"
+            CONFIG="$(printf '{"compartmentId":"%s","source":{"sourceType":"OCISERVICE","service":"functions","resource":"%s","category":"invoke"}}' \
+              "$OCI_COMPARTMENT_OCID" "$OCI_FUNCTION_APPLICATION_OCID")"
+            oci logging log create \
+              --log-group-id "$LOG_GROUP_ID" \
+              --display-name "$FUNCTION_LOG_DISPLAY_NAME" \
+              --log-type SERVICE \
+              --is-enabled true \
+              --configuration "$CONFIG" \
+              --wait-for-state SUCCEEDED
+          else
+            echo "Invocation log already enabled: $LOG_ID"
           fi
