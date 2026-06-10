@@ -105,12 +105,9 @@ class ActionEventHandler:
                 },
             ),
         )
-        self.agent_run_sync.record_action_state(
-            plan,
-            action,
-            event_name="action.selected",
-            message=f"Selected action {action.action_id} for execution.",
-        )
+        # "Selected" is a transient state replaced by "executing" within the same
+        # invocation; recording it costs several API round-trips per action for a
+        # state no one observes. The trace above keeps it auditable.
         pre_validation = self.validator.validate_before_execution(action, context)
         self._trace(
             event,

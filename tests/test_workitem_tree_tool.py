@@ -95,10 +95,8 @@ def test_tree_tool_creates_hierarchy_locally(prompts_path) -> None:
     assert by_title["Design schema"]["parentId"] == by_title["Build API"]["itemId"]
     assert by_title["Implement endpoints"]["parentId"] == by_title["Build API"]["itemId"]
     assert by_title["Build UI"]["parentId"] is None
-    assert len(result.emitted_events) == 1
-    event = result.emitted_events[0].event
-    assert event.event_type == "workitem.tree.created"
-    assert event.payload["createdCount"] == 4
+    # No follow-up events: nothing routes them, so they would only burn invocations.
+    assert result.emitted_events == []
 
 
 def test_tree_tool_links_children_to_api_assigned_parent_ids(prompts_path) -> None:

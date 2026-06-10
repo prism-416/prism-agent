@@ -392,7 +392,6 @@ def test_action_handler_marks_failed_state_when_executor_raises() -> None:
     assert updated_plan.status.value == "failed"
     assert updated_plan.get_action(action.action_id).status == ActionStatus.FAILED
     assert [call[2] for call in agent_run_sync.calls] == [
-        "action.selected",
         "action.executing",
         "action.execution_error",
     ]
