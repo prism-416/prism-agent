@@ -30,15 +30,23 @@ _FAILURE_EVENTS = {
 
 def handler(ctx: Any, data: bytes | str | dict[str, Any]) -> dict[str, Any]:
     _ = ctx
-    payload = _queue_message_content(_decode_payload(data))
+    # Settings/logger/notifier are derived from the function environment, not the
+    # invocation payload, so they are built up front: the except block needs them
+    # to report any payload-handling failure.
     settings = Settings.from_env()
     logger = configure_logging(settings.log_level)
     notifier = DiscordNotifier(settings.discord_webhook_url)
-    label = _payload_label(payload)
 
-    log_json(logger, logging.INFO, {"log": "invocation.start", **_payload_fields(payload)})
-    notifier.send(f"▶️ Triggered: {label}")
+    # Payload parsing lives inside the try so a malformed/unexpected payload (e.g. a
+    # connector batch shape this function does not accept) surfaces as a logged,
+    # alerted error instead of a bare 502 with no diagnostics.
+    label = "unknown"
+    payload: dict[str, Any] = {}
     try:
+        payload = _queue_message_content(_decode_payload(data))
+        label = _payload_label(payload)
+        log_json(logger, logging.INFO, {"log": "invocation.start", **_payload_fields(payload)})
+        notifier.send(f"▶️ Triggered: {label}")
         result, traces = _process(settings, payload)
     except Exception as exc:
         log_json(
@@ -48,6 +56,7 @@ def handler(ctx: Any, data: bytes | str | dict[str, Any]) -> dict[str, Any]:
                 "log": "invocation.error",
                 "error_type": type(exc).__name__,
                 "error": str(exc),
+                "raw_payload_preview": _raw_preview(data),
                 **_payload_fields(payload),
             },
             exc_info=True,
@@ -105,7 +114,7 @@ def _process(
     )
 
 
-def _decode_payload(data: bytes | str | dict[str, Any]) -> dict[str, Any]:
+def _decode_payload(data: bytes | str | dict[str, Any]) -> Any:
     if isinstance(data, bytes):
         return json.loads(data.decode("utf-8"))
     if isinstance(data, str):
@@ -113,12 +122,19 @@ def _decode_payload(data: bytes | str | dict[str, Any]) -> dict[str, Any]:
     return data
 
 
-def _queue_message_content(payload: dict[str, Any]) -> dict[str, Any]:
+def _queue_message_content(payload: Any) -> dict[str, Any]:
+    # A Service Connector / Queue trigger may deliver the batch as a bare JSON array
+    # or wrapped in {"messages": [...]}. This function processes one event per
+    # invocation, so a batch of any size other than one is rejected loudly.
+    if isinstance(payload, list):
+        return _queue_message_content(_single_message(payload))
+
+    if not isinstance(payload, dict):
+        raise ValueError(f"Unexpected queue payload type: {type(payload).__name__}")
+
     messages = payload.get("messages")
     if isinstance(messages, list):
-        if len(messages) != 1:
-            raise ValueError("OCI queue function payload must contain exactly one message.")
-        return _queue_message_content(messages[0])
+        return _queue_message_content(_single_message(messages))
 
     for key in ("content", "body", "message"):
         value = payload.get(key)
@@ -130,6 +146,27 @@ def _queue_message_content(payload: dict[str, Any]) -> dict[str, Any]:
         if isinstance(value, dict):
             return value
     return payload
+
+
+def _single_message(messages: list[Any]) -> Any:
+    if len(messages) != 1:
+        raise ValueError(
+            f"OCI trigger delivered {len(messages)} messages; this function processes "
+            "exactly one event per invocation. Configure the connector/queue batch "
+            "size to 1."
+        )
+    return messages[0]
+
+
+def _raw_preview(data: bytes | str | dict[str, Any], limit: int = 500) -> str:
+    """Truncated repr of the raw invocation payload, for diagnosing shape mismatches."""
+    if isinstance(data, bytes):
+        text = data.decode("utf-8", errors="replace")
+    elif isinstance(data, str):
+        text = data
+    else:
+        text = repr(data)
+    return text[:limit]
 
 
 def _is_feature_provisioning_pointer(payload: dict[str, Any]) -> bool:
