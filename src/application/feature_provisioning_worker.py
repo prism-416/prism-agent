@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from application.recursion_runner import RecursionRunner
+from application.domain_event_handler import DomainEventHandler
+from domain.events import DomainEvent, EventEnvelope
 from domain.feature_provisioning import (
     FeatureProvisioningPayload,
     FeatureProvisioningPointerEvent,
@@ -20,15 +21,24 @@ class FeatureProvisioningResult:
 
 
 class FeatureProvisioningWorker:
+    """Resolves a feature-provisioning pointer to its seed domain event and dispatches
+    a single processing step.
+
+    Like every other event in the system, the seed event is handled one step per
+    invocation: the handler plans and enqueues the first action, and follow-up events
+    are delivered to the queue and processed by subsequent function invocations. The
+    worker does not drain the recursion in-session.
+    """
+
     def __init__(
         self,
         payload_store: JsonPayloadStore,
         state_store: StateStore,
-        recursion_runner: RecursionRunner,
+        domain_event_handler: DomainEventHandler,
     ) -> None:
         self.payload_store = payload_store
         self.state_store = state_store
-        self.recursion_runner = recursion_runner
+        self.domain_event_handler = domain_event_handler
 
     def handle_pointer(self, content: dict[str, Any]) -> FeatureProvisioningResult:
         pointer = FeatureProvisioningPointerEvent.model_validate(content)
@@ -45,31 +55,14 @@ class FeatureProvisioningWorker:
                 duplicate=True,
             )
 
-        payload_data = self.payload_store.fetch_json(
-            pointer.payload_object_name,
-            pointer.payload_version_id,
-        )
-        payload = FeatureProvisioningPayload.model_validate(payload_data)
-        payload.validate_matches(pointer)
-        event = payload.to_domain_event(pointer)
-        traces = self.recursion_runner.run(event)
+        event = self.resolve_seed_event(self.payload_store, pointer)
 
-        failures = [
-            trace
-            for trace in traces
-            if trace.event_name
-            in {"event.failed", "action.failed", "plan.failed", "recursion.max_depth"}
-        ]
-        if failures:
-            raise RuntimeError(failures[-1].message)
-        if not any(trace.event_name == "plan.completed" for trace in traces):
-            trace_summary = "; ".join(
-                f"{trace.event_name}: {trace.message}" for trace in traces[-5:]
-            )
-            raise RuntimeError(
-                "Feature provisioning did not complete all planned actions."
-                f" Recent traces: {trace_summary}"
-            )
+        # Dispatch one step. The handler plans and enqueues the first action; the rest
+        # of the workflow runs across later invocations. A transient failure (context
+        # hydration, planning) raises and propagates, so the invocation fails and the
+        # pointer is retried. The idempotency key is recorded only on a clean dispatch,
+        # so retries re-run planning while a redelivered pointer is a no-op.
+        self.domain_event_handler.handle(EventEnvelope.wrap(event))
 
         _record_idempotency_key(
             self.state_store,
@@ -78,6 +71,20 @@ class FeatureProvisioningWorker:
             run_id,
         )
         return FeatureProvisioningResult(request_id=pointer.request_id, event_id=event.event_id)
+
+    @staticmethod
+    def resolve_seed_event(
+        payload_store: JsonPayloadStore,
+        pointer: FeatureProvisioningPointerEvent,
+    ) -> DomainEvent:
+        """Fetch and validate the referenced payload, returning the seed domain event."""
+        payload_data = payload_store.fetch_json(
+            pointer.payload_object_name,
+            pointer.payload_version_id,
+        )
+        payload = FeatureProvisioningPayload.model_validate(payload_data)
+        payload.validate_matches(pointer)
+        return payload.to_domain_event(pointer)
 
 
 def _check_idempotency_key(

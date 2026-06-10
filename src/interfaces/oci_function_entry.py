@@ -181,11 +181,14 @@ def _handle_feature_provisioning_pointer(
         settings.object_storage_namespace,
         settings.object_storage_bucket_name,
     )
-    worker_container = build_container(settings.model_copy(update={"queue_backend": "memory"}))
+    # Use the configured queue backend (OCI in prod) so the seed event's follow-up
+    # actions are enqueued and processed by subsequent invocations, like every other
+    # event — not drained in-session.
+    container = build_container(settings)
     worker = FeatureProvisioningWorker(
         payload_store=payload_store,
-        state_store=worker_container.state_store,
-        recursion_runner=worker_container.recursion_runner,
+        state_store=container.state_store,
+        domain_event_handler=container.domain_event_handler,
     )
     result = worker.handle_pointer(payload)
     return (
@@ -196,7 +199,7 @@ def _handle_feature_provisioning_pointer(
             "request_id": result.request_id,
             "duplicate": result.duplicate,
         },
-        _traces(worker_container.state_store),
+        _traces(container.state_store),
     )
 
 

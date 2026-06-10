@@ -8,7 +8,11 @@ import pytest
 
 from app.container import build_container
 from application.feature_provisioning_worker import FeatureProvisioningWorker
-from domain.results import TraceEvent
+from domain.events import AgentActionEvent, EventEnvelope
+from domain.feature_provisioning import (
+    FeatureProvisioningPayload,
+    FeatureProvisioningPointerEvent,
+)
 from infrastructure.config.settings import Settings
 from infrastructure.object_storage.memory_payload_store import MemoryPayloadStore
 from infrastructure.object_storage.oci_payload_store import ObjectStoragePayloadStore
@@ -77,14 +81,14 @@ def _live_integration_settings() -> Settings:
     )
 
 
-def test_feature_provisioning_worker_hydrates_payload_and_completes_plan() -> None:
+def test_feature_provisioning_worker_dispatches_first_action_to_queue() -> None:
     container = build_container(Settings(queue_backend="memory", state_backend="memory"))
     pointer = _pointer()
     payload_store = MemoryPayloadStore({pointer["payloadObjectName"]: _local_payload(pointer)})
     worker = FeatureProvisioningWorker(
         payload_store=payload_store,
         state_store=container.state_store,
-        recursion_runner=container.recursion_runner,
+        domain_event_handler=container.domain_event_handler,
     )
 
     result = worker.handle_pointer(pointer)
@@ -96,17 +100,27 @@ def test_feature_provisioning_worker_hydrates_payload_and_completes_plan() -> No
         container.state_store.check_idempotency_key(f"feature_provisioning:{pointer['requestId']}")
         is True
     )
-    assert any(trace.event_name == "plan.completed" for trace in container.state_store.traces)
+
+    # Planning happened in this step; execution did not. The first action is enqueued
+    # for a later invocation rather than drained in-session.
     plan = next(iter(container.state_store.plans.values()))
     assert plan.plan_id == pointer["requestId"]
     assert [action.idempotency_key for action in plan.actions] == [
         f"{pointer['requestId']}:create_sprint:1",
         f"{pointer['requestId']}:create_workitem:2",
     ]
-    assert [action.input["requestedByUserId"] for action in plan.actions] == [
-        pointer["requestedByUserId"],
-        pointer["requestedByUserId"],
-    ]
+    trace_names = {trace.event_name for trace in container.state_store.traces}
+    assert "plan.created" in trace_names
+    assert "action.enqueued" in trace_names
+    assert "plan.completed" not in trace_names
+    assert "action.completed" not in trace_names
+
+    queued = container.queue.dequeue()
+    assert queued is not None and container.queue.is_empty()
+    queued_event = queued.envelope.event
+    assert isinstance(queued_event, AgentActionEvent)
+    assert queued_event.plan_id == plan.plan_id
+    assert queued_event.action_id == plan.actions[0].action_id
 
 
 def test_feature_provisioning_worker_skips_duplicate_request() -> None:
@@ -116,13 +130,14 @@ def test_feature_provisioning_worker_skips_duplicate_request() -> None:
     worker = FeatureProvisioningWorker(
         payload_store=MemoryPayloadStore({pointer["payloadObjectName"]: _local_payload(pointer)}),
         state_store=container.state_store,
-        recursion_runner=container.recursion_runner,
+        domain_event_handler=container.domain_event_handler,
     )
 
     result = worker.handle_pointer(pointer)
 
     assert result.duplicate is True
     assert result.event_id is None
+    assert container.queue.is_empty()
 
 
 def test_feature_provisioning_worker_rejects_payload_identity_mismatch() -> None:
@@ -132,24 +147,54 @@ def test_feature_provisioning_worker_rejects_payload_identity_mismatch() -> None
     worker = FeatureProvisioningWorker(
         payload_store=MemoryPayloadStore({pointer["payloadObjectName"]: mismatched}),
         state_store=container.state_store,
-        recursion_runner=container.recursion_runner,
+        domain_event_handler=container.domain_event_handler,
     )
 
     with pytest.raises(ValueError, match="does not match pointer"):
         worker.handle_pointer(pointer)
 
 
-def test_feature_provisioning_worker_treats_plan_failed_as_failure() -> None:
+def test_feature_provisioning_worker_propagates_dispatch_failure_without_recording_key() -> None:
     container = build_container(Settings(queue_backend="memory", state_backend="memory"))
     pointer = _pointer()
     worker = FeatureProvisioningWorker(
         payload_store=MemoryPayloadStore({pointer["payloadObjectName"]: _local_payload(pointer)}),
         state_store=container.state_store,
-        recursion_runner=_PlanFailedRunner(),
+        domain_event_handler=_RaisingDomainEventHandler(),
     )
 
-    with pytest.raises(RuntimeError, match="Planner produced no executable actions"):
+    with pytest.raises(RuntimeError, match="planner exploded"):
         worker.handle_pointer(pointer)
+
+    # The pointer stays retryable: a transient dispatch failure must not record the
+    # idempotency key.
+    assert (
+        container.state_store.check_idempotency_key(f"feature_provisioning:{pointer['requestId']}")
+        is False
+    )
+
+
+def test_feature_provisioning_pipeline_completes_via_recursion_runner() -> None:
+    # End-to-end coverage of the full workflow, simulated in-process the way local
+    # dev drains the memory queue. Production fans these steps out across invocations.
+    container = build_container(Settings(queue_backend="memory", state_backend="memory"))
+    pointer_dict = _pointer()
+    pointer = FeatureProvisioningPointerEvent.model_validate(pointer_dict)
+    payload = FeatureProvisioningPayload.model_validate(_local_payload(pointer_dict))
+    event = payload.to_domain_event(pointer)
+
+    traces = container.recursion_runner.run(event)
+
+    assert any(trace.event_name == "plan.completed" for trace in traces)
+    plan = next(iter(container.state_store.plans.values()))
+    assert [action.idempotency_key for action in plan.actions] == [
+        f"{pointer_dict['requestId']}:create_sprint:1",
+        f"{pointer_dict['requestId']}:create_workitem:2",
+    ]
+    assert [action.input["requestedByUserId"] for action in plan.actions] == [
+        pointer_dict["requestedByUserId"],
+        pointer_dict["requestedByUserId"],
+    ]
 
 
 @pytest.mark.integration
@@ -167,7 +212,7 @@ def test_feature_provisioning_worker_live_api_calls_with_prism_api_state() -> No
             settings.object_storage_bucket_name,
         ),
         state_store=container.state_store,
-        recursion_runner=container.recursion_runner,
+        domain_event_handler=container.domain_event_handler,
     )
 
     result = worker.handle_pointer(pointer)
@@ -176,23 +221,20 @@ def test_feature_provisioning_worker_live_api_calls_with_prism_api_state() -> No
     assert result.request_id == pointer["requestId"]
     assert result.event_id is not None
     assert result.duplicate is False
-    assert container.settings.queue_backend == "memory"
     assert container.settings.state_backend == "prism_api"
-    assert any(trace.event_name == "plan.completed" for trace in container.state_store.traces)
+    # Single-step dispatch: planning ran against live Gemini/Prism and the first
+    # action is enqueued for a later invocation.
+    trace_names = {trace.event_name for trace in container.state_store.traces}
+    assert "plan.created" in trace_names
+    assert "action.enqueued" in trace_names
+    assert not container.queue.is_empty()
     assert not any(
-        trace.event_name in {"event.failed", "action.failed", "recursion.max_depth"}
-        for trace in container.state_store.traces
+        name in {"event.failed", "action.failed", "plan.failed", "recursion.max_depth"}
+        for name in trace_names
     )
 
 
-class _PlanFailedRunner:
-    def run(self, seed_event):
-        _ = seed_event
-        return [
-            TraceEvent(
-                event_name="plan.failed",
-                workspace_id="workspace-1",
-                project_id="project-1",
-                message="Planner produced no executable actions after retry attempts.",
-            )
-        ]
+class _RaisingDomainEventHandler:
+    def handle(self, envelope: EventEnvelope) -> None:
+        _ = envelope
+        raise RuntimeError("planner exploded")
