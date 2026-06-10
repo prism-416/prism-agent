@@ -6,7 +6,7 @@ description: Creates a Prism work item after validation and approval policy perm
 usage:
   - Use only when a selected skill allows work item creation and the caller has project access.
   - Use for concrete work items that are ready to create or ready to propose for approval.
-  - Put acceptance criteria inside description.
+  - Write the description as plain prose that expands the title with the concrete behavior to deliver.
   - Use assigneeUsernames only after selecting teammates from hydrated member username, role, jobNames, and workspace-scoped member_workloads evidence.
   - Leave assigneeUsernames omitted or empty when capability or workload evidence is insufficient.
 do_not_use:

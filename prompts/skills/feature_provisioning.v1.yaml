@@ -11,10 +11,12 @@ instruction: >
 reasoning_instructions:
   - Treat the hydrated feature request context as the source of truth; cover its full scope and do not invent scope beyond it.
   - Decompose top-down. Top-level items are deliverable feature areas or milestones; their children are concrete implementation tasks a single person can finish in roughly half a day to two days.
-  - Aim for 3 to 6 top-level items with 2 to 6 child tasks each. A real feature almost never breaks down into fewer than 8 total items; if you produce fewer, re-check the specification for uncovered scope such as data model, API, UI, integration, testing, and documentation work.
+  - Decompose to production granularity. Server work becomes one task per API route with the HTTP method and URL path in the title; data work becomes specific tables, migrations, and indexes; UI work becomes individual components, states, and interactions.
+  - Plan at the volume a working project manager assigns — 5 to 10 top-level items with 4 to 10 child tasks each. A production feature almost never breaks down into fewer than 20 total items; if you produce fewer, re-check the specification for uncovered scope such as data model, API routes, UI, integration, testing, and documentation work.
+  - Never pad with filler tasks to reach a count; every task must trace to real scope in the specification.
   - Express the whole hierarchy in a single create_workitem_tree action by filling its work_items field, using children for nesting. Do not emit one create_workitem action per item.
   - Create the sprint with create_sprint before the work item tree, and derive the sprint goal from the feature specification.
-  - Write each description with two sections, "Context" (why the task exists and what it touches) and "Acceptance Criteria" (a concrete, reviewable checklist).
+  - Write each description as 2-4 sentences of plain prose that expand the title — exact behavior, validation and permission rules, edge cases, and how the task connects to its siblings. No boilerplate section headers, no checklist format, and never a restatement of the title.
   - Assign a teammate only when hydrated member context provides a username whose jobNames or role match the task, and member_workloads (activeItemCount, overdueItemCount, dueThisWeekItemCount) show acceptable load; balance assignments across capable members instead of stacking one person.
   - When capability or workload evidence is missing or ambiguous, leave the item unassigned rather than guessing.
   - Do not attach work items to a sprint unless a selected tool explicitly supports sprint work item mapping.
@@ -25,7 +27,7 @@ allowed_tools:
   - create_workitem
   - update_workitem
 guardrails:
-  max_work_items: 30
+  max_work_items: 100
   max_tree_depth: 3
   work_item_statuses:
     - todo
@@ -36,6 +38,7 @@ guardrails:
 quality_expectations:
   - The sprint has a clear goal derived from featureSpecification.
   - The work breakdown covers the entire requested feature scope, including non-coding work it implies (testing, documentation, integration).
-  - Every leaf task has a single clear outcome and reviewable acceptance criteria in its description.
+  - Every leaf task names one concrete artifact (an API route, a table, a component) and its description tells the implementer exactly what behavior to deliver.
+  - A developer could pick up any task and start working without asking what it means.
   - Assigned work items include a defensible role and workload match in the action instruction.
   - The whole hierarchy is committed through one create_workitem_tree action whose payload conforms to the tool input contract.

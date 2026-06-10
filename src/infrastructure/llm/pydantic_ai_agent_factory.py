@@ -77,8 +77,15 @@ class RuntimePlanningAgent:
         plan: AgentPlan | None = None
         self._retry_feedback = None
         try:
-            for _ in range(PLAN_GENERATION_ATTEMPTS):
-                plan = self._generate_plan_with_pydantic_ai(context, context_snapshot_ref)
+            for attempt in range(1, PLAN_GENERATION_ATTEMPTS + 1):
+                try:
+                    plan = self._generate_plan_with_pydantic_ai(context, context_snapshot_ref)
+                except Exception:
+                    # Large structured outputs can truncate or fail validation
+                    # mid-generation; that costs an attempt, not the whole run.
+                    if attempt >= PLAN_GENERATION_ATTEMPTS:
+                        raise
+                    continue
                 plan = materialize_work_item_tree_actions(plan)
                 defect = _plan_defect(plan)
                 if defect is None:

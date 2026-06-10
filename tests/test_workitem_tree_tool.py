@@ -224,7 +224,7 @@ def test_tree_tool_rejects_empty_or_invalid_trees(prompts_path) -> None:
 
 def test_tree_tool_rejects_oversized_trees(prompts_path) -> None:
     tool = _tree_tool(prompts_path)
-    items = [{"title": f"Task {index}", "description": "AC"} for index in range(31)]
+    items = [{"title": f"Task {index}", "description": "AC"} for index in range(101)]
 
     result = tool.execute(_action({"projectId": "p1", "items": items}), _context(prompts_path))
 
@@ -417,6 +417,43 @@ def test_planning_accepts_typed_work_items_without_retry(prompts_path) -> None:
     plan = agent.generate_plan(snapshot.context, snapshot.ref, approval_policy=None)
 
     assert agent.attempts == 1
+    assert plan.actions[0].input["items"][0]["title"] == "Build feature"
+
+
+class _FlakyPlanningAgent(_TypedDraftPlanningAgent):
+    def _generate_plan_with_pydantic_ai(self, context, context_snapshot_ref):
+        if self.attempts == 0:
+            self.attempts += 1
+            raise ValueError("structured output truncated")
+        return super()._generate_plan_with_pydantic_ai(context, context_snapshot_ref)
+
+
+def test_planning_retries_after_generation_exception(prompts_path) -> None:
+    prompt_registry = PromptRegistry(prompts_path)
+    workflow_prompt = prompt_registry.get_workflow("feature.provision", "1.0.0")
+    workflow = WorkflowRegistry.from_prompt_registry(prompt_registry).get("feature.provision")
+    event = DomainEvent(
+        event_type="feature.provisioning.requested",
+        workspace_id="w1",
+        project_id="p1",
+        payload={"featureSpecification": "Add saved views."},
+        idempotency_key="req-flaky",
+    )
+    snapshot = ContextProvider(PrismApiClient(), prompt_registry).hydrate(
+        EventEnvelope.wrap(event), workflow
+    )
+    skill_registry = SkillRegistry.from_prompt_registry(prompt_registry)
+    tool_registry = ToolRegistry.from_prompt_registry(prompt_registry)
+    agent = _FlakyPlanningAgent(
+        workflow_prompt,
+        skill_registry.select(["feature_provisioning"]),
+        tool_registry.select(skill_registry.allowed_tools_for(["feature_provisioning"])),
+        GeminiModelProvider(Settings()),
+    )
+
+    plan = agent.generate_plan(snapshot.context, snapshot.ref, approval_policy=None)
+
+    assert agent.attempts == 2
     assert plan.actions[0].input["items"][0]["title"] == "Build feature"
 
 

@@ -4,17 +4,18 @@ version: 1.0.0
 name: Task Decomposition
 description: Breaks a work item into a complete set of implementation-ready child work items.
 instruction: >
-  Decompose the source work item into implementation-ready child work items with
-  acceptance criteria and dependency awareness. Design the complete breakdown first,
-  then commit it in a single create_workitem_tree action attached under the source
-  work item via the top-level parentId.
+  Decompose the source work item into implementation-ready child work items at
+  production granularity, with dependency awareness. Design the complete breakdown
+  first, then commit it in a single create_workitem_tree action attached under the
+  source work item via the top-level parentId.
 reasoning_instructions:
   - Preserve product intent and avoid inventing scope; everything you create must trace back to the source work item.
-  - Cover the source item's full scope. A typical story yields 4 to 8 child tasks; include implied work such as data changes, API changes, UI changes, tests, and documentation when the story touches them.
+  - Cover the source item's full scope. A typical story yields 5 to 15 child tasks; include implied work such as data changes, API changes, UI changes, tests, and documentation when the story touches them.
+  - Decompose to production granularity. Server work becomes one task per API route with the HTTP method and URL path in the title; data work becomes specific tables, migrations, and indexes; UI work becomes individual components, states, and interactions.
   - Each leaf task should be finishable by one person in roughly half a day to two days; merge micro-tasks and split multi-day work.
   - Use one create_workitem_tree action with input.parentId set to the source work item's itemId and every task in the action's work_items field; use children only when a child genuinely needs its own sub-breakdown.
   - Check sibling_work_items and child_work_items (or find_duplicate_workitems) first, and do not recreate work that already exists.
-  - Write each description with two sections, "Context" and "Acceptance Criteria"; acceptance criteria must be concrete enough to review against.
+  - Write each description as 2-4 sentences of plain prose that expand the title — exact behavior, validation and permission rules, edge cases, and how the task connects to its siblings. No boilerplate section headers, no checklist format, and never a restatement of the title.
   - Assign a teammate only when hydrated member context provides a username whose jobNames or role match the task, and member_workloads (activeItemCount, overdueItemCount, dueThisWeekItemCount) show acceptable load; balance assignments across capable members.
   - When capability or workload evidence is missing or ambiguous, leave the task unassigned rather than guessing.
   - Keep titles concise and outcome-oriented (imperative, under 100 characters).
@@ -24,7 +25,7 @@ allowed_tools:
   - create_workitem_tree
   - create_workitem
 guardrails:
-  max_tasks: 20
+  max_tasks: 40
   max_tree_depth: 3
   default_mode: auto_commit
   work_item_statuses:
@@ -35,6 +36,7 @@ guardrails:
     - archived
 quality_expectations:
   - The breakdown covers the whole source work item, not just its most obvious part.
-  - Each proposed task has a single clear outcome and reviewable acceptance criteria.
+  - Each proposed task names one concrete artifact (an API route, a table, a component) and its description tells the implementer exactly what behavior to deliver.
+  - A developer could pick up any task and start working without asking what it means.
   - Assigned tasks include a defensible role and workload match in the action instruction.
   - The breakdown is committed through one create_workitem_tree action whose payload conforms to the tool input contract.
