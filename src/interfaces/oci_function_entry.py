@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from app.container import build_container
@@ -10,6 +11,7 @@ from domain.results import TraceEvent
 from infrastructure.config.settings import Settings
 from infrastructure.notifications.discord_notifier import DiscordNotifier
 from infrastructure.object_storage.oci_payload_store import ObjectStoragePayloadStore
+from infrastructure.observability.logging_config import configure_logging, log_json
 
 # Trace events that represent a problem worth surfacing in an invocation summary.
 _FAILURE_EVENTS = {
@@ -30,15 +32,40 @@ def handler(ctx: Any, data: bytes | str | dict[str, Any]) -> dict[str, Any]:
     _ = ctx
     payload = _queue_message_content(_decode_payload(data))
     settings = Settings.from_env()
+    logger = configure_logging(settings.log_level)
     notifier = DiscordNotifier(settings.discord_webhook_url)
     label = _payload_label(payload)
 
+    log_json(logger, logging.INFO, {"log": "invocation.start", **_payload_fields(payload)})
     notifier.send(f"▶️ Triggered: {label}")
     try:
         result, traces = _process(settings, payload)
     except Exception as exc:
+        log_json(
+            logger,
+            logging.ERROR,
+            {
+                "log": "invocation.error",
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+                **_payload_fields(payload),
+            },
+            exc_info=True,
+        )
         notifier.send(_failure_message(label, exc))
         raise
+    log_json(
+        logger,
+        logging.INFO,
+        {
+            "log": "invocation.end",
+            "ok": result.get("ok"),
+            "run_id": _run_id(traces),
+            "actions": _completed_tools(traces),
+            "issues": sum(1 for trace in traces if _is_failure(trace)),
+            **_payload_fields(payload),
+        },
+    )
     notifier.send(_summary_message(label, traces))
     return result
 
@@ -142,17 +169,31 @@ def _traces(state_store: Any) -> list[TraceEvent]:
 
 
 def _payload_label(payload: dict[str, Any]) -> str:
-    if payload.get("type") == "feature.provisioning.requested":
-        return _format_label(
-            "feature.provisioning.requested",
-            payload.get("workspaceId") or payload.get("workspace_id"),
-        )
-    return _format_label(payload.get("event_type") or "unknown", payload.get("workspace_id"))
+    fields = _payload_fields(payload)
+    return _format_label(fields.get("event_type") or "unknown", fields.get("workspace_id"))
 
 
 def _format_label(event_type: str, workspace_id: str | None) -> str:
     workspace = f" · ws `{workspace_id}`" if workspace_id else ""
     return f"`{event_type}`{workspace}"
+
+
+def _payload_fields(payload: dict[str, Any]) -> dict[str, Any]:
+    if payload.get("type") == "feature.provisioning.requested":
+        return {
+            "event_type": "feature.provisioning.requested",
+            "workspace_id": payload.get("workspaceId") or payload.get("workspace_id"),
+            "request_id": payload.get("requestId"),
+        }
+    # Queue messages carry an EventEnvelope ({"event": {...}}); fall back to the
+    # payload itself for a bare event dict.
+    event = payload.get("event") if isinstance(payload.get("event"), dict) else payload
+    return {
+        "event_type": event.get("event_type"),
+        "event_id": event.get("event_id"),
+        "workspace_id": event.get("workspace_id"),
+        "correlation_id": event.get("correlation_id"),
+    }
 
 
 def _summary_message(label: str, traces: list[TraceEvent]) -> str:

@@ -140,7 +140,9 @@ def _run_feature_provisioning(args: argparse.Namespace) -> int:
 
 
 def _settings_for_run(live: bool, offline: bool) -> Settings:
-    settings = Settings.from_env()
+    # The local CLI renders traces itself via print_trace, so disable the stdout
+    # JSON trace logger to avoid duplicate, noisy output.
+    settings = Settings.from_env().model_copy(update={"log_traces": False})
     if live and offline:
         raise ValueError("--live and --offline cannot be used together.")
     if offline:
