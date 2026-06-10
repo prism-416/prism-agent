@@ -6,12 +6,48 @@ from concurrent.futures import ThreadPoolExecutor
 from capabilities.definitions import WorkflowPromptDefinition
 from capabilities.skills import RuntimeSkill
 from capabilities.tools.base import BaseAgentTool
+from capabilities.tools.workitem_tools import (
+    coerce_work_item_tree_items,
+    validate_work_item_tree,
+)
 from domain.context import AgentContext
 from domain.plans import AgentPlan
 from domain.policies import ActionApprovalPolicy
 from infrastructure.llm.gemini_model_provider import GeminiModelProvider
 
 PLAN_GENERATION_ATTEMPTS = 3
+
+_EMPTY_PLAN_FEEDBACK = (
+    "The previous planning attempt produced zero executable actions. "
+    "Return an AgentPlan with at least one action using an allowed tool "
+    "when the workflow goal requires work. Do not leave actions empty "
+    "for feature provisioning, task decomposition, or other actionable "
+    "workflows unless the hydrated context proves there is no safe action."
+)
+
+
+def _plan_defect(plan: AgentPlan) -> str | None:
+    """A retryable planning mistake, or None when the plan is executable.
+
+    Catches defects that would deterministically fail at execution time — most
+    importantly a create_workitem_tree action whose untyped input is missing the
+    work item list — so planning retries with targeted feedback instead of the
+    runtime burning action attempts on an unfixable input.
+    """
+    if not plan.actions:
+        return _EMPTY_PLAN_FEEDBACK
+    for action in plan.actions:
+        if action.tool_name != "create_workitem_tree":
+            continue
+        error = validate_work_item_tree(coerce_work_item_tree_items(action.input))
+        if error:
+            return (
+                f"The previous create_workitem_tree action input was invalid: {error} "
+                "Put the complete work item breakdown into input.items as a JSON array "
+                "of node objects, each with a title, a description, and an optional "
+                "children list of nodes with the same shape."
+            )
+    return None
 
 
 class RuntimePlanningAgent:
@@ -40,18 +76,12 @@ class RuntimePlanningAgent:
         plan: AgentPlan | None = None
         self._retry_feedback = None
         try:
-            for attempt in range(1, PLAN_GENERATION_ATTEMPTS + 1):
-                if attempt > 1:
-                    self._retry_feedback = (
-                        "The previous planning attempt produced zero executable actions. "
-                        "Return an AgentPlan with at least one action using an allowed tool "
-                        "when the workflow goal requires work. Do not leave actions empty "
-                        "for feature provisioning, task decomposition, or other actionable "
-                        "workflows unless the hydrated context proves there is no safe action."
-                    )
+            for _ in range(PLAN_GENERATION_ATTEMPTS):
                 plan = self._generate_plan_with_pydantic_ai(context, context_snapshot_ref)
-                if plan.actions:
+                defect = _plan_defect(plan)
+                if defect is None:
                     return plan
+                self._retry_feedback = defect
             return plan
         finally:
             self._retry_feedback = None

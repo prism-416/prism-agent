@@ -9,6 +9,8 @@ description: >
   work breakdown at once instead of one item per action.
 usage:
   - Use when the plan produces more than one related work item; put the whole breakdown in a single action.
+  - The action input MUST contain a non-empty items array; an input without items is invalid and does nothing.
+  - 'Example input: {"projectId": "<project uuid>", "items": [{"title": "Build saved view API", "description": "Context: ...\nAcceptance Criteria: ...", "priority": "high", "children": [{"title": "Design saved_view table", "description": "..."}]}, {"title": "Build filter bar UI", "description": "..."}]}'
   - Use items[].children to express hierarchy. Parent ids are resolved automatically; never invent parentId values for tree nodes.
   - Set parentId only at the top level, and only to attach the whole tree under an existing work item (for example the source story).
   - Put acceptance criteria inside each item's description.
@@ -23,10 +25,14 @@ approval_policy: auto_commit
 input_contract:
   projectId: string
   parentId: optional uuid of an existing work item to attach the whole tree under
-  items: >
-    required non-empty list of work item nodes; each node accepts title (string,
-    required), description (string, required), startDate (optional date),
-    dueDate (optional date), priority (optional low | medium | high | urgent),
-    status (optional todo | in_progress | in_review | done | archived),
-    assigneeUsernames (optional unique username list), labelNames (optional
-    unique label list), children (optional list of nodes with the same shape)
+  items: required non-empty array of work item node objects
+  items[] node:
+    title: string, required
+    description: string, required
+    startDate: optional date
+    dueDate: optional date
+    priority: optional low | medium | high | urgent
+    status: optional todo | in_progress | in_review | done | archived
+    assigneeUsernames: optional unique username list
+    labelNames: optional unique label list
+    children: optional array of nodes with this same shape
