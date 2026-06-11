@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 from capabilities.definitions import WorkflowPromptDefinition
@@ -20,6 +22,19 @@ from domain.policies import ActionApprovalPolicy
 from infrastructure.llm.gemini_model_provider import GeminiModelProvider
 
 PLAN_GENERATION_ATTEMPTS = 3
+# A large breakdown takes 50-90s per generation; three sequential attempts can
+# blow through the 300s function timeout and kill the invocation silently.
+# Once this much wall time is spent, the current plan ships as-is instead of
+# risking another generation.
+PLANNING_TIME_BUDGET_SECONDS = 180
+# A critic regeneration doubles wall time; for plans that already took this
+# long to generate, the marginal quality gain is not worth the timeout risk.
+CRITIC_SKIP_GENERATION_SECONDS = 60
+# Without an explicit cap some providers default to a small completion limit,
+# truncating big plans into schema-validation failures that burn every attempt.
+PLANNING_MAX_OUTPUT_TOKENS = 65536
+
+logger = logging.getLogger(__name__)
 
 _EMPTY_PLAN_FEEDBACK = (
     "The previous planning attempt produced zero executable actions. "
@@ -133,24 +148,49 @@ class RuntimePlanningAgent:
         plan: AgentPlan | None = None
         self._retry_feedback = None
         quality_review_used = False
+        started_at = time.monotonic()
         try:
             for attempt in range(1, PLAN_GENERATION_ATTEMPTS + 1):
+                attempt_started_at = time.monotonic()
                 try:
                     plan = self._generate_plan_with_pydantic_ai(context, context_snapshot_ref)
-                except Exception:
+                except Exception as exc:
+                    logger.warning(
+                        "planning attempt %d failed after %.1fs: %s",
+                        attempt,
+                        time.monotonic() - attempt_started_at,
+                        exc,
+                    )
                     # Large structured outputs can truncate or fail validation
                     # mid-generation; that costs an attempt, not the whole run.
-                    if attempt >= PLAN_GENERATION_ATTEMPTS:
+                    if attempt >= PLAN_GENERATION_ATTEMPTS or self._budget_spent(started_at):
                         raise
                     continue
+                generation_seconds = time.monotonic() - attempt_started_at
+                logger.info(
+                    "planning attempt %d produced %d action(s) in %.1fs",
+                    attempt,
+                    len(plan.actions),
+                    generation_seconds,
+                )
                 plan = materialize_typed_action_inputs(plan)
                 defect = _plan_defect(plan)
                 if defect is not None:
+                    if self._budget_spent(started_at):
+                        logger.warning(
+                            "planning budget exhausted with a defective plan; shipping it"
+                        )
+                        return plan
                     self._retry_feedback = defect
                     continue
                 # Critic pass: one revision round for soft quality findings, then
                 # accept the plan rather than fail the run on imperfect output.
-                if not quality_review_used and attempt < PLAN_GENERATION_ATTEMPTS:
+                if (
+                    not quality_review_used
+                    and attempt < PLAN_GENERATION_ATTEMPTS
+                    and not self._budget_spent(started_at)
+                    and generation_seconds <= CRITIC_SKIP_GENERATION_SECONDS
+                ):
                     issues = plan_quality_issues(plan, context.entities)
                     if issues:
                         quality_review_used = True
@@ -160,6 +200,10 @@ class RuntimePlanningAgent:
             return plan
         finally:
             self._retry_feedback = None
+
+    @staticmethod
+    def _budget_spent(started_at: float) -> bool:
+        return time.monotonic() - started_at > PLANNING_TIME_BUDGET_SECONDS
 
     def _generate_plan_with_pydantic_ai(
         self,
@@ -177,6 +221,7 @@ class RuntimePlanningAgent:
             self.model_provider.pydantic_ai_model_ref(self.workflow_prompt, self.model_tier),
             output_type=AgentPlan,
             instructions=instructions,
+            model_settings={"max_tokens": PLANNING_MAX_OUTPUT_TOKENS},
         )
         user_prompt = self._render_user_prompt(context, context_snapshot_ref)
         result = self._run_agent_sync(agent, user_prompt)

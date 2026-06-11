@@ -106,7 +106,7 @@ def stable_agent_run_uuid(*parts: str) -> str:
 
 
 def action_api_id(action: PlannedAction) -> str:
-    return stable_agent_run_uuid(action.action_id)
+    return stable_agent_run_uuid(action.plan_id, action.action_id)
 
 
 def action_api_type(action: PlannedAction) -> str:

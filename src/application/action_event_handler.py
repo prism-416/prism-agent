@@ -250,13 +250,13 @@ class ActionEventHandler:
 
         running_action = action.with_status(ActionStatus.RUNNING)
         running_plan = plan.replace_action(running_action)
-        self.state_store.update_plan(running_plan)
         self.agent_run_sync.record_action_state(
             running_plan,
             running_action,
             event_name="action.executing",
             message=f"Executing tool {action.tool_name} for action {action.action_id}.",
         )
+        self.state_store.update_plan(running_plan)
         self._trace(
             event,
             "action.executing",
