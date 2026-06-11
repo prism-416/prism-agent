@@ -15,6 +15,7 @@ from domain.events import DomainEvent, EventEnvelope
 from infrastructure.object_storage.base import JsonPayloadStore
 from infrastructure.observability.logging_config import get_logger
 from infrastructure.prism_api.client import (
+    PrismApiBadRequestError,
     PrismApiClient,
     PrismApiConflictError,
     PrismApiUnprocessableError,
@@ -27,6 +28,7 @@ from infrastructure.registries.workflow_registry import WorkflowRegistry
 DIFF = {
     "pullNumber": 42,
     "headSha": "abc123",
+    "repositoryFullName": "owner/repo",
     "files": [{"filename": "src/app.py", "status": "modified", "patch": "@@"}],
 }
 
@@ -103,6 +105,7 @@ def test_submit_review_posts_grounded_review_with_head_sha() -> None:
     assert project_id == "project-1"
     assert pull_number == 42
     assert payload["headSha"] == "abc123"
+    assert payload["repositoryFullName"] == "owner/repo"
     assert payload["event"] == "REQUEST_CHANGES"
     assert payload["requestedByUserId"] == "user-1"
     assert payload["comments"] == [{"path": "src/app.py", "line": 12, "body": "Handle None here."}]
@@ -123,6 +126,17 @@ def test_submit_review_returns_failure_on_invalid_anchor() -> None:
 
     assert result.success is False
     assert result.output["reason"] == "invalid_review_comment_anchor"
+
+
+def test_submit_review_returns_failure_on_bad_request() -> None:
+    # A 400 (e.g. a contract violation) must fail gracefully, not raise and crash
+    # the invocation into a 502 + retry loop.
+    client = _ReviewPrismClient(raises=PrismApiBadRequestError("400"))
+    result = _tool(client).execute(_action({"event": "COMMENT", "summary": "x"}), _context({}))
+
+    assert result.success is False
+    assert result.output["reason"] == "invalid_review_request"
+    assert result.error is not None
 
 
 def test_submit_review_offline_echoes_without_client_call() -> None:
@@ -512,6 +526,9 @@ def test_context_provider_dereferences_diff_pointer_to_object_storage() -> None:
     assert diff["pullNumber"] == 33
     assert diff["headSha"] == "fbd9682"
     assert diff["files"][0]["patch"].startswith("@@ -1 +1 @@")
+    # repositoryFullName (blob top-level, not inside pullRequest) is folded into the
+    # diff so the submit tool can satisfy the required API field at execution time.
+    assert diff["repositoryFullName"] == "prism-416/prism-agent"
     # The same PR object also feeds the pull_request_event metadata entity.
     assert (
         snapshot.context.entities["pull_request_event"]["pullRequest"]["title"] == "Add diff fetch"

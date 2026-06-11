@@ -7,6 +7,7 @@ from domain.actions import PlannedAction
 from domain.context import AgentContext
 from domain.results import ToolResult
 from infrastructure.prism_api.client import (
+    PrismApiBadRequestError,
     PrismApiConflictError,
     PrismApiUnprocessableError,
 )
@@ -41,6 +42,7 @@ class SubmitPullRequestReviewTool(BaseAgentTool):
         project_id = str(action.input.get("projectId") or context.project_id or "")
         pull_number = action.input.get("pullNumber") or diff.get("pullNumber")
         head_sha = str(action.input.get("headSha") or diff.get("headSha") or "")
+        repository_full_name = _repository_full_name(action.input, context, diff)
         event = str(action.input.get("event") or "COMMENT").upper()
         if event not in REVIEW_EVENTS:
             event = "COMMENT"
@@ -51,6 +53,10 @@ class SubmitPullRequestReviewTool(BaseAgentTool):
             "event": event,
             "summary": summary,
         }
+        # The review-submit API requires repositoryFullName to resolve the repo
+        # against the project workspace; omit only when context has no value.
+        if repository_full_name:
+            payload["repositoryFullName"] = repository_full_name
         if comments:
             payload["comments"] = comments
         requested_by_user_id = _requested_by_user_id(action.input, context)
@@ -69,6 +75,18 @@ class SubmitPullRequestReviewTool(BaseAgentTool):
                     tool_name=self.name,
                     success=False,
                     output={"reason": "stale_pull_request_head", "headSha": head_sha},
+                    error=str(exc),
+                )
+            except PrismApiBadRequestError as exc:
+                # A 400 is a permanent contract error (e.g. a missing required
+                # field): fail the action gracefully so the run records it instead
+                # of crashing the invocation and triggering pointless retries.
+                return ToolResult(
+                    plan_id=action.plan_id,
+                    action_id=action.action_id,
+                    tool_name=self.name,
+                    success=False,
+                    output={"reason": "invalid_review_request"},
                     error=str(exc),
                 )
             except PrismApiUnprocessableError as exc:
@@ -114,6 +132,27 @@ def _normalize_comments(raw: Any) -> list[dict[str, Any]]:
             comment["side"] = side
         comments.append(comment)
     return comments
+
+
+def _repository_full_name(
+    input_data: dict[str, Any], context: AgentContext, diff: dict[str, Any]
+) -> str:
+    """Resolve the repository full name (owner/repo) for the review submission.
+
+    Prefer an explicit tool input, then the hydrated diff entity (where the
+    ContextProvider folds it in from the diff blob), then the source event payload
+    as a planning-time fallback. The API requires this to resolve the repo against
+    the project workspace.
+    """
+    for value in (input_data.get("repositoryFullName"), diff.get("repositoryFullName")):
+        if value:
+            return str(value)
+    payload = context.source_event.event.payload
+    if isinstance(payload, dict):
+        repo = payload.get("repositoryFullName") or payload.get("repository_full_name")
+        if repo:
+            return str(repo)
+    return ""
 
 
 def _requested_by_user_id(input_data: dict[str, Any], context: AgentContext) -> str | None:

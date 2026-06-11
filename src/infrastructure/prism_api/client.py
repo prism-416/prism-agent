@@ -12,6 +12,10 @@ from domain.events import BaseRuntimeEvent
 from infrastructure.observability.logging_config import get_logger, log_json
 
 
+class PrismApiBadRequestError(RuntimeError):
+    """Raised when the Prism API returns 400 (a malformed or invalid request body)."""
+
+
 class PrismApiNotFoundError(RuntimeError):
     """Raised when the Prism API returns 404 for a requested resource."""
 
@@ -438,6 +442,10 @@ class PrismApiClient:
         except HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
             request_payload = _format_request_payload(payload)
+            if exc.code == 400:
+                raise PrismApiBadRequestError(
+                    f"Prism API {method} {path} returned 400: {detail}{request_payload}"
+                ) from exc
             if exc.code == 404:
                 raise PrismApiNotFoundError(
                     f"Prism API {method} {path} returned 404: {detail}{request_payload}"
@@ -794,6 +802,10 @@ def _embedded_pull_request_diff(payload: Any) -> dict[str, Any] | None:
         head = payload.get("headSha") or payload.get("head_sha")
         if head:
             diff["headSha"] = head
+    if not diff.get("repositoryFullName") and not diff.get("repository_full_name"):
+        repo = payload.get("repositoryFullName") or payload.get("repository_full_name")
+        if repo:
+            diff["repositoryFullName"] = repo
     return diff
 
 
