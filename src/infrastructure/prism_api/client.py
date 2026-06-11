@@ -483,9 +483,19 @@ class PrismApiClient:
         if _has_hydrated_pull_request_diff(explicit_value):
             _log_diff_hydration(event, source="payload", result=explicit_value, fetched=False)
             return explicit_value
+        # PR-review events embed the changed files under pullRequest/pull_request
+        # rather than a separate pull_request_diff entity, so the diff is already
+        # in the payload — just under a different key. Prefer it over an API fetch
+        # (which can't fire anyway when the event carries no project_id).
+        embedded = _embedded_pull_request_diff(event.payload)
         pull_number = _pull_request_number(explicit_value) or _pull_request_number(event.payload)
+        if _has_hydrated_pull_request_diff(embedded):
+            _log_diff_hydration(
+                event, source="embedded", result=embedded, fetched=False, pull_number=pull_number
+            )
+            return embedded
         if not (self.is_configured and event.project_id and pull_number is not None):
-            resolved = explicit_value if isinstance(explicit_value, dict) else None
+            resolved = explicit_value if isinstance(explicit_value, dict) else embedded
             _log_diff_hydration(
                 event,
                 source="payload",
@@ -500,7 +510,7 @@ class PrismApiClient:
         try:
             fetched = self.get_pull_request(event.project_id, pull_number)
         except PrismApiNotFoundError:
-            resolved = explicit_value if isinstance(explicit_value, dict) else None
+            resolved = explicit_value if isinstance(explicit_value, dict) else embedded
             _log_diff_hydration(
                 event,
                 source="fetch",
@@ -758,6 +768,33 @@ def _has_hydrated_pull_request_diff(value: Any) -> bool:
         if isinstance(file_diff, dict) and str(file_diff.get("patch") or "").strip():
             return True
     return False
+
+
+def _embedded_pull_request_diff(payload: Any) -> dict[str, Any] | None:
+    """Lift the diff out of the pull request object the event embeds.
+
+    PR-review events carry the changed files under ``pullRequest``/``pull_request``
+    (``files[].patch``) instead of a separate ``pull_request_diff`` entity, so the
+    hydrated diff is already in the payload — just under the key that feeds
+    ``pull_request_event``. Return it in the pull_request_diff shape, backfilling
+    the pull number and head SHA from the top level when the nested object omits
+    them, so the review workflow can ground on it without an API fetch.
+    """
+    if not isinstance(payload, dict):
+        return None
+    pull_request = payload.get("pull_request") or payload.get("pullRequest")
+    if not isinstance(pull_request, dict):
+        return None
+    diff = dict(pull_request)
+    if diff.get("pullNumber") is None and diff.get("pull_number") is None:
+        number = _pull_request_number(payload)
+        if number is not None:
+            diff["pullNumber"] = number
+    if not diff.get("headSha") and not diff.get("head_sha"):
+        head = payload.get("headSha") or payload.get("head_sha")
+        if head:
+            diff["headSha"] = head
+    return diff
 
 
 def _diff_files_count(value: Any) -> int | None:

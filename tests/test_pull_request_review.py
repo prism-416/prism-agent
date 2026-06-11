@@ -220,6 +220,57 @@ def test_pull_request_diff_hydration_fetches_when_payload_has_stub(monkeypatch) 
     )
 
 
+def test_pull_request_diff_hydration_uses_embedded_pull_request(
+    monkeypatch, diff_log_capture
+) -> None:
+    # The real PR-review payload embeds the diff under pullRequest.files and
+    # carries no separate pull_request_diff entity and no project_id, so the
+    # API fetch can't fire. The diff must still hydrate straight from the event.
+    def _unexpected_urlopen(request, timeout):  # pragma: no cover - must not run
+        raise AssertionError("hydration should not call the API when the diff is embedded")
+
+    monkeypatch.setattr("infrastructure.prism_api.client.urlopen", _unexpected_urlopen)
+    handler = diff_log_capture
+    event = DomainEvent(
+        event_type="pr.review_requested",
+        workspace_id="workspace-1",
+        payload={
+            "schemaVersion": "1.0",
+            "workspaceId": "workspace-1",
+            "repositoryFullName": "prism-416/prism-agent",
+            "pullNumber": 33,
+            "headSha": "fbd9682",
+            "pullRequest": {
+                "pullNumber": 33,
+                "state": "open",
+                "headSha": "fbd9682",
+                "files": [
+                    {
+                        "filename": "tests/test_pull_request_review.py",
+                        "status": "modified",
+                        "additions": 1,
+                        "deletions": 3,
+                        "patch": "@@ -328,9 +328,7 @@\n-x\n+y",
+                    }
+                ],
+                "truncated": False,
+            },
+        },
+    )
+
+    # Unconfigured client (no base_url) and no project_id: the failing prod shape.
+    entities = PrismApiClient().fetch_context_entities(event, ["pull_request_diff"])
+
+    diff = entities["pull_request_diff"]
+    assert diff["pullNumber"] == 33
+    assert diff["headSha"] == "fbd9682"
+    assert diff["files"][0]["patch"].startswith("@@ -328,9 +328,7 @@")
+    record = _diff_records(handler)[-1]
+    assert record["source"] == "embedded"
+    assert record["has_usable_diff"] is True
+    assert record["level"] == logging.INFO
+
+
 def test_pull_request_diff_hydration_prefers_explicit_payload() -> None:
     event = DomainEvent(
         event_type="pr.opened",
