@@ -97,6 +97,9 @@ class PrismApiClient:
             if context_key == "pull_request_diff":
                 entities[context_key] = self._pull_request_diff_context(event, explicit_value)
                 continue
+            if context_key == "pull_request_event":
+                entities[context_key] = self._pull_request_event_context(event, explicit_value)
+                continue
             entities[context_key] = (
                 explicit_value
                 if explicit_value is not None
@@ -466,15 +469,36 @@ class PrismApiClient:
         event: BaseRuntimeEvent,
         explicit_value: Any,
     ) -> dict[str, Any] | None:
-        if explicit_value is not None:
+        if _has_hydrated_pull_request_diff(explicit_value):
             return explicit_value
-        pull_number = _pull_request_number(event.payload)
+        pull_number = _pull_request_number(explicit_value) or _pull_request_number(event.payload)
         if not (self.is_configured and event.project_id and pull_number is not None):
-            return None
+            return explicit_value if isinstance(explicit_value, dict) else None
         try:
             return self.get_pull_request(event.project_id, pull_number)
         except PrismApiNotFoundError:
-            return None
+            return explicit_value if isinstance(explicit_value, dict) else None
+
+    @staticmethod
+    def _pull_request_event_context(
+        event: BaseRuntimeEvent,
+        explicit_value: Any,
+    ) -> dict[str, Any]:
+        if isinstance(explicit_value, dict):
+            return explicit_value
+        payload = event.payload
+        pull_request = payload.get("pull_request") or payload.get("pullRequest")
+        context: dict[str, Any] = {}
+        if isinstance(pull_request, dict):
+            context["pullRequest"] = pull_request
+        pull_number = _pull_request_number(payload)
+        if pull_number is not None:
+            context["pullNumber"] = pull_number
+        for key in ("action", "repository", "sender", "installation"):
+            value = payload.get(key)
+            if value is not None:
+                context[key] = value
+        return context
 
     def _workspace_members_context(
         self,
@@ -655,18 +679,49 @@ def _format_request_payload(payload: dict[str, Any] | None) -> str:
     return f" request_payload={json.dumps(payload, sort_keys=True)}"
 
 
-def _pull_request_number(payload: dict[str, Any]) -> str | int | None:
-    for key in ("pullNumber", "pull_number"):
+def _pull_request_number(payload: Any) -> str | int | None:
+    if not isinstance(payload, dict):
+        return None
+    for key in (
+        "pullNumber",
+        "pull_number",
+        "pullRequestNumber",
+        "pull_request_number",
+        "githubPullNumber",
+        "github_pull_number",
+        "number",
+    ):
         value = payload.get(key)
         if value is not None:
             return value
-    pull_request = payload.get("pull_request") or payload.get("pullRequest")
-    if isinstance(pull_request, dict):
-        for key in ("number", "pullNumber", "pull_number"):
-            value = pull_request.get(key)
+    for parent_key in (
+        "pull_request",
+        "pullRequest",
+        "github_pull_request",
+        "githubPullRequest",
+        "queue_pointer",
+        "queuePointer",
+    ):
+        nested = payload.get(parent_key)
+        if isinstance(nested, dict):
+            value = _pull_request_number(nested)
             if value is not None:
                 return value
     return None
+
+
+def _has_hydrated_pull_request_diff(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    files = value.get("files")
+    if not isinstance(files, list):
+        return False
+    if value.get("truncated") is True:
+        return True
+    for file_diff in files:
+        if isinstance(file_diff, dict) and str(file_diff.get("patch") or "").strip():
+            return True
+    return False
 
 
 PROJECT_WORK_ITEMS_CONTEXT_LIMIT = 100

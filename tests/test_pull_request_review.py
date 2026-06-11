@@ -165,6 +165,54 @@ def test_pull_request_diff_hydration_uses_get_endpoint(monkeypatch) -> None:
     )
 
 
+def test_pull_request_diff_hydration_fetches_when_payload_has_stub(monkeypatch) -> None:
+    captured = {}
+
+    class _FakeResponse:
+        def __enter__(self) -> _FakeResponse:
+            return self
+
+        def __exit__(self, *args: Any) -> None:
+            _ = args
+
+        def read(self) -> bytes:
+            return (
+                b'{"data":{"pullNumber":42,"headSha":"fresh",'
+                b'"files":[{"filename":"src/app.py","status":"modified",'
+                b'"additions":1,"deletions":0,"patch":"@@ -1 +1 @@"}],'
+                b'"commits":[],"truncated":false}}'
+            )
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        _ = timeout
+        return _FakeResponse()
+
+    monkeypatch.setattr("infrastructure.prism_api.client.urlopen", fake_urlopen)
+
+    event = DomainEvent(
+        event_type="pr.opened",
+        workspace_id="workspace-1",
+        project_id="project-1",
+        payload={
+            "action": "opened",
+            "number": 42,
+            "pull_request_diff": {"headSha": "stub"},
+        },
+    )
+    entities = PrismApiClient("https://api.example.test", "secret-token").fetch_context_entities(
+        event,
+        ["pull_request_diff"],
+    )
+
+    assert entities["pull_request_diff"]["headSha"] == "fresh"
+    assert entities["pull_request_diff"]["files"][0]["patch"] == "@@ -1 +1 @@"
+    assert captured["url"] == (
+        "https://api.example.test/projects/project-1/pull-requests/internal/42"
+        "?includeDiff=true&includeFiles=true"
+    )
+
+
 def test_pull_request_diff_hydration_prefers_explicit_payload() -> None:
     event = DomainEvent(
         event_type="pr.opened",
@@ -175,6 +223,28 @@ def test_pull_request_diff_hydration_prefers_explicit_payload() -> None:
     entities = PrismApiClient().fetch_context_entities(event, ["pull_request_diff"])
 
     assert entities["pull_request_diff"] == DIFF
+
+
+def test_pull_request_event_context_uses_pr_payload_metadata() -> None:
+    event = DomainEvent(
+        event_type="pr.opened",
+        workspace_id="workspace-1",
+        project_id="project-1",
+        payload={
+            "action": "opened",
+            "number": 42,
+            "pull_request": {"title": "Add diff fetch", "state": "open"},
+            "repository": {"full_name": "octo/repo"},
+        },
+    )
+    entities = PrismApiClient().fetch_context_entities(event, ["pull_request_event"])
+
+    assert entities["pull_request_event"] == {
+        "pullRequest": {"title": "Add diff fetch", "state": "open"},
+        "pullNumber": 42,
+        "action": "opened",
+        "repository": {"full_name": "octo/repo"},
+    }
 
 
 if __name__ == "__main__":  # pragma: no cover
