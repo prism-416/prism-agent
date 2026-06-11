@@ -334,6 +334,73 @@ def test_action_handler_skips_hydrated_completed_action_and_enqueues_next() -> N
     ]
 
 
+def test_action_handler_keeps_action_pending_when_running_sync_fails() -> None:
+    class FailingAgentRunSync:
+        def record_action_state(self, *args, **kwargs) -> None:
+            _ = (args, kwargs)
+            raise RuntimeError("step sync failed")
+
+    store = MemoryStateStore()
+    queue = MemoryQueue()
+    handler = ActionEventHandler(
+        _ResultExecutor(success=True),
+        _CommitValidator(),
+        store,
+        queue,
+        FailingAgentRunSync(),
+    )
+    source_event = EventEnvelope.wrap(
+        DomainEvent(event_type="story.created", workspace_id="w1", project_id="p1")
+    )
+    snapshot = ContextSnapshot(
+        workspace_id="w1",
+        project_id="p1",
+        workflow_id="story.decompose",
+        context=AgentContext(
+            workspace_id="w1",
+            project_id="p1",
+            source_event=source_event,
+            workflow_id="story.decompose",
+        ),
+    )
+    plan = AgentPlan(
+        source_event_id=source_event.event_id,
+        workspace_id="w1",
+        project_id="p1",
+        goal="test",
+        prompt_id="story.decompose",
+        prompt_version="1.0.0",
+        context_snapshot_ref=snapshot.ref,
+    )
+    action = PlannedAction(
+        plan_id=plan.plan_id,
+        action_type="mutation",
+        tool_name="create_sprint",
+        instruction="Create sprint.",
+        idempotency_key="k1",
+    )
+    plan = plan.model_copy(update={"actions": [action]})
+    store.save_context_snapshot(snapshot)
+    store.save_plan(plan)
+
+    with pytest.raises(RuntimeError, match="step sync failed"):
+        handler.handle(
+            EventEnvelope.wrap(
+                AgentActionEvent(
+                    workspace_id="w1",
+                    project_id="p1",
+                    plan_id=plan.plan_id,
+                    action_id=action.action_id,
+                )
+            )
+        )
+
+    hydrated = store.get_plan("w1", plan.plan_id)
+    assert hydrated is not None
+    assert hydrated.get_action(action.action_id).status == ActionStatus.PENDING
+    assert store.get_action_result(plan.plan_id, action.action_id) is None
+
+
 def test_action_handler_marks_failed_state_when_executor_raises() -> None:
     store = MemoryStateStore()
     queue = MemoryQueue()

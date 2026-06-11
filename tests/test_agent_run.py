@@ -58,6 +58,23 @@ def test_resolve_agent_run_id_falls_back_to_correlation_id() -> None:
     assert resolve_agent_run_id(context) == "req-1"
 
 
+def test_action_api_id_is_scoped_to_plan_id() -> None:
+    first = PlannedAction(
+        action_id="create_sprint_1",
+        plan_id="run-1",
+        action_type="mutation",
+        tool_name="create_sprint",
+        instruction="Create sprint.",
+        input={},
+        idempotency_key="k1",
+    )
+    retry = first.model_copy()
+    next_run = first.model_copy(update={"plan_id": "run-2"})
+
+    assert action_api_id(first) == action_api_id(retry)
+    assert action_api_id(first) != action_api_id(next_run)
+
+
 def test_agent_run_sync_upserts_plan_and_action_state() -> None:
     prism_client = _CapturingPrismClient()
     sync = AgentRunSync(prism_client, enabled=True)
