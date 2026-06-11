@@ -328,9 +328,7 @@ def test_diff_hydration_warns_when_fetch_returns_fileless_pr(monkeypatch, diff_l
     handler = diff_log_capture
     monkeypatch.setattr(
         "infrastructure.prism_api.client.urlopen",
-        lambda request, timeout: _fake_response(
-            b'{"data":{"pullNumber":42,"headSha":"abc123"}}'
-        ),
+        lambda request, timeout: _fake_response(b'{"data":{"pullNumber":42,"headSha":"abc123"}}'),
     )
     event = DomainEvent(
         event_type="pr.review_requested",
