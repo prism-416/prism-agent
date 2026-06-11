@@ -6,7 +6,12 @@ from typing import Any
 
 from app.container import build_container
 from application.feature_provisioning_worker import FeatureProvisioningWorker
-from domain.events import AgentActionEvent, EventEnvelope
+from domain.events import (
+    AgentActionEvent,
+    EventEnvelope,
+    SubAgentCompletedEvent,
+    SubAgentTaskEvent,
+)
 from domain.results import TraceEvent
 from infrastructure.config.settings import Settings
 from infrastructure.notifications.discord_notifier import DiscordNotifier
@@ -102,6 +107,8 @@ def _process(
 
     if isinstance(envelope.event, AgentActionEvent):
         container.action_event_handler.handle(envelope)
+    elif isinstance(envelope.event, SubAgentTaskEvent | SubAgentCompletedEvent):
+        container.subagent_coordinator.handle(envelope)
     else:
         container.domain_event_handler.handle(envelope)
 

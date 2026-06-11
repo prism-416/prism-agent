@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
@@ -439,9 +439,14 @@ class PrismApiClient:
             raise RuntimeError(
                 f"Prism API {method} {path} failed: {exc.code} {detail}{request_payload}"
             ) from exc
+        except (URLError, TimeoutError, OSError) as exc:
+            raise RuntimeError(f"Prism API {method} {path} unreachable: {exc}") from exc
         if not raw:
             return {}
-        decoded = json.loads(raw)
+        try:
+            decoded = json.loads(raw)
+        except ValueError as exc:
+            raise RuntimeError(f"Prism API {method} {path} returned invalid JSON.") from exc
         if isinstance(decoded, dict) and "data" in decoded:
             return decoded["data"]
         if isinstance(decoded, dict):

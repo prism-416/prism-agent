@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from io import BytesIO
 from typing import Any
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 import pytest
 
@@ -318,6 +318,32 @@ def test_prism_api_client_includes_payload_on_http_error(monkeypatch) -> None:
     assert "failed: 500" in message
     assert 'request_payload={"status": "running"}' in message
     assert "secret-token" not in message
+
+
+def test_prism_api_client_normalizes_transport_errors(monkeypatch) -> None:
+    def fake_urlopen(request, timeout):
+        _ = (request, timeout)
+        raise URLError("connection refused")
+
+    monkeypatch.setattr("infrastructure.prism_api.client.urlopen", fake_urlopen)
+
+    with pytest.raises(RuntimeError, match="unreachable"):
+        PrismApiClient("https://api.example.test", "secret-token").get_workspace_members(
+            "workspace-1"
+        )
+
+
+def test_prism_api_client_normalizes_invalid_json(monkeypatch) -> None:
+    def fake_urlopen(request, timeout):
+        _ = (request, timeout)
+        return _FakeResponse(b"{not-json")
+
+    monkeypatch.setattr("infrastructure.prism_api.client.urlopen", fake_urlopen)
+
+    with pytest.raises(RuntimeError, match="returned invalid JSON"):
+        PrismApiClient("https://api.example.test", "secret-token").get_workspace_members(
+            "workspace-1"
+        )
 
 
 def test_create_tools_add_requested_by_user_id_from_queue_pointer() -> None:
