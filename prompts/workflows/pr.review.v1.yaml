@@ -32,7 +32,7 @@ constraints:
   - Anchor every review comment to a file path and line present in the diff.
   - Carry the diff headSha into the review so a moved pull request head is rejected.
   - Review comments must use the submit_pull_request_review input contract.
-default_execution_mode: suggest
+default_execution_mode: auto_commit
 approval_policy:
-  submit_pull_request_review: user_approval_required
+  submit_pull_request_review: auto_commit
 max_recursion_depth: 10

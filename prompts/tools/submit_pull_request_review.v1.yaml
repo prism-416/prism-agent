@@ -13,7 +13,7 @@ do_not_use:
   - Do not approve a pull request from diff inspection alone unless policy permits it.
   - Do not anchor comments to paths or lines that are not in the PR diff.
 risk_level: high
-approval_policy: user_approval_required
+approval_policy: auto_commit
 input_contract:
   projectId: string
   pullNumber: number
