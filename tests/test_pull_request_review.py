@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from application.planner import Planner
 from capabilities.tools.github_tools import SubmitPullRequestReviewTool
 from domain.actions import PlannedAction
 from domain.context import AgentContext
@@ -17,6 +18,9 @@ from infrastructure.prism_api.client import (
     PrismApiUnprocessableError,
 )
 from infrastructure.registries.prompt_registry import PromptRegistry
+from infrastructure.registries.skill_registry import SkillRegistry
+from infrastructure.registries.tool_registry import ToolRegistry
+from infrastructure.registries.workflow_registry import WorkflowRegistry
 
 DIFF = {
     "pullNumber": 42,
@@ -377,6 +381,24 @@ def test_diff_hydration_warns_when_fetch_skipped_for_missing_project(diff_log_ca
     assert record["skip_reason"] == "missing_project_id"
     assert record["has_usable_diff"] is False
     assert "guard" in record
+
+
+def test_pr_review_workflow_auto_commits_submit_review() -> None:
+    # The pr.review run must post its review directly: the effective approval
+    # policy for submit_pull_request_review has to resolve to no approval gate,
+    # built the same way Planner.create_plan merges tool defaults with the
+    # workflow override (the workflow side wins the dict merge).
+    prompt_registry = PromptRegistry()
+    workflow = WorkflowRegistry.from_prompt_registry(prompt_registry).get("pr.review")
+    skill_registry = SkillRegistry.from_prompt_registry(prompt_registry)
+    tool_registry = ToolRegistry.from_prompt_registry(prompt_registry)
+
+    allowed = skill_registry.allowed_tools_for(workflow.required_skills)
+    assert "submit_pull_request_review" in allowed
+    tool_modes = {name: tool_registry.definition(name).approval_policy for name in allowed}
+    policy = Planner._approval_policy(tool_modes | workflow.approval_policy)
+
+    assert policy.requires_approval("submit_pull_request_review") is False
 
 
 if __name__ == "__main__":  # pragma: no cover
