@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import logging
 from typing import Any
 
 import pytest
@@ -8,6 +10,7 @@ from capabilities.tools.github_tools import SubmitPullRequestReviewTool
 from domain.actions import PlannedAction
 from domain.context import AgentContext
 from domain.events import DomainEvent, EventEnvelope
+from infrastructure.observability.logging_config import get_logger
 from infrastructure.prism_api.client import (
     PrismApiClient,
     PrismApiConflictError,
@@ -245,6 +248,137 @@ def test_pull_request_event_context_uses_pr_payload_metadata() -> None:
         "action": "opened",
         "repository": {"full_name": "octo/repo"},
     }
+
+
+class _CapturingHandler(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__()
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
+
+
+@pytest.fixture
+def diff_log_capture():
+    logger = get_logger()
+    handler = _CapturingHandler()
+    previous_level = logger.level
+    previous_propagate = logger.propagate
+    logger.addHandler(handler)
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False
+    try:
+        yield handler
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(previous_level)
+        logger.propagate = previous_propagate
+
+
+def _diff_records(handler: _CapturingHandler) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for record in handler.records:
+        try:
+            payload = json.loads(record.getMessage())
+        except (ValueError, TypeError):
+            continue
+        if isinstance(payload, dict) and payload.get("log") == "diff.hydration":
+            records.append({"level": record.levelno, **payload})
+    return records
+
+
+def _fake_response(body: bytes):
+    class _FakeResponse:
+        def __enter__(self) -> _FakeResponse:
+            return self
+
+        def __exit__(self, *args: Any) -> None:
+            _ = args
+
+        def read(self) -> bytes:
+            return body
+
+    return _FakeResponse()
+
+
+def test_diff_hydration_logs_info_when_payload_is_hydrated(diff_log_capture) -> None:
+    handler = diff_log_capture
+    event = DomainEvent(
+        event_type="pr.opened",
+        workspace_id="workspace-1",
+        project_id="project-1",
+        payload={"pull_request_diff": DIFF},
+    )
+
+    PrismApiClient().fetch_context_entities(event, ["pull_request_diff"])
+
+    records = _diff_records(handler)
+    assert len(records) == 1
+    record = records[0]
+    assert record["level"] == logging.INFO
+    assert record["source"] == "payload"
+    assert record["fetch_attempted"] is False
+    assert record["has_usable_diff"] is True
+    assert record["files_count"] == 1
+    assert "guard" not in record
+
+
+def test_diff_hydration_warns_when_fetch_returns_fileless_pr(monkeypatch, diff_log_capture) -> None:
+    handler = diff_log_capture
+    monkeypatch.setattr(
+        "infrastructure.prism_api.client.urlopen",
+        lambda request, timeout: _fake_response(
+            b'{"data":{"pullNumber":42,"headSha":"abc123"}}'
+        ),
+    )
+    event = DomainEvent(
+        event_type="pr.review_requested",
+        workspace_id="workspace-1",
+        project_id="project-1",
+        payload={"pullNumber": 42},
+    )
+
+    entities = PrismApiClient("https://api.example.test", "secret-token").fetch_context_entities(
+        event,
+        ["pull_request_diff"],
+    )
+
+    # Behaviour is unchanged: the fileless fetch result still passes through.
+    assert entities["pull_request_diff"] == {"pullNumber": 42, "headSha": "abc123"}
+    records = _diff_records(handler)
+    assert len(records) == 1
+    record = records[0]
+    assert record["level"] == logging.WARNING
+    assert record["source"] == "fetch"
+    assert record["fetch_attempted"] is True
+    assert record["pull_number"] == 42
+    assert record["has_usable_diff"] is False
+    assert record["files_count"] is None
+    assert "guard" in record
+
+
+def test_diff_hydration_warns_when_fetch_skipped_for_missing_project(diff_log_capture) -> None:
+    handler = diff_log_capture
+    event = DomainEvent(
+        event_type="pr.review_requested",
+        workspace_id="workspace-1",
+        payload={"pullNumber": 42},
+    )
+
+    PrismApiClient("https://api.example.test", "secret-token").fetch_context_entities(
+        event,
+        ["pull_request_diff"],
+    )
+
+    records = _diff_records(handler)
+    assert len(records) == 1
+    record = records[0]
+    assert record["level"] == logging.WARNING
+    assert record["fetch_attempted"] is False
+    assert record["skip_reason"] == "missing_project_id"
+    assert record["has_usable_diff"] is False
+    assert "guard" in record
 
 
 if __name__ == "__main__":  # pragma: no cover

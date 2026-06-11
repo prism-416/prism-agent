@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
@@ -8,6 +9,7 @@ from urllib.request import Request, urlopen
 
 from domain.backlog import compute_backlog_signals
 from domain.events import BaseRuntimeEvent
+from infrastructure.observability.logging_config import get_logger, log_json
 
 
 class PrismApiNotFoundError(RuntimeError):
@@ -479,14 +481,39 @@ class PrismApiClient:
         explicit_value: Any,
     ) -> dict[str, Any] | None:
         if _has_hydrated_pull_request_diff(explicit_value):
+            _log_diff_hydration(event, source="payload", result=explicit_value, fetched=False)
             return explicit_value
         pull_number = _pull_request_number(explicit_value) or _pull_request_number(event.payload)
         if not (self.is_configured and event.project_id and pull_number is not None):
-            return explicit_value if isinstance(explicit_value, dict) else None
+            resolved = explicit_value if isinstance(explicit_value, dict) else None
+            _log_diff_hydration(
+                event,
+                source="payload",
+                result=resolved,
+                fetched=False,
+                pull_number=pull_number,
+                skip_reason=_diff_fetch_skip_reason(
+                    self.is_configured, event.project_id, pull_number
+                ),
+            )
+            return resolved
         try:
-            return self.get_pull_request(event.project_id, pull_number)
+            fetched = self.get_pull_request(event.project_id, pull_number)
         except PrismApiNotFoundError:
-            return explicit_value if isinstance(explicit_value, dict) else None
+            resolved = explicit_value if isinstance(explicit_value, dict) else None
+            _log_diff_hydration(
+                event,
+                source="fetch",
+                result=resolved,
+                fetched=True,
+                pull_number=pull_number,
+                fetch_error="not_found",
+            )
+            return resolved
+        _log_diff_hydration(
+            event, source="fetch", result=fetched, fetched=True, pull_number=pull_number
+        )
+        return fetched
 
     @staticmethod
     def _pull_request_event_context(
@@ -731,6 +758,67 @@ def _has_hydrated_pull_request_diff(value: Any) -> bool:
         if isinstance(file_diff, dict) and str(file_diff.get("patch") or "").strip():
             return True
     return False
+
+
+def _diff_files_count(value: Any) -> int | None:
+    if not isinstance(value, dict):
+        return None
+    files = value.get("files")
+    return len(files) if isinstance(files, list) else None
+
+
+def _diff_fetch_skip_reason(
+    is_configured: bool,
+    project_id: str | None,
+    pull_number: Any,
+) -> str:
+    if not is_configured:
+        return "client_not_configured"
+    if not project_id:
+        return "missing_project_id"
+    if pull_number is None:
+        return "missing_pull_number"
+    return "unknown"
+
+
+def _log_diff_hydration(
+    event: BaseRuntimeEvent,
+    *,
+    source: str,
+    result: Any,
+    fetched: bool,
+    pull_number: Any = None,
+    skip_reason: str | None = None,
+    fetch_error: str | None = None,
+) -> None:
+    """Record why pull_request_diff hydration did or didn't produce a usable diff.
+
+    The hydration path used to return ``None`` silently, so a review that bailed
+    with "diff unavailable" left no trace of the cause. This emits one structured
+    line per attempt: INFO when the diff carries file patches, WARNING (with the
+    precise reason) when it doesn't, so a fileless fetch or a skipped fetch is
+    visible in function logs instead of surfacing only as a vague suggestion.
+    """
+    hydrated = _has_hydrated_pull_request_diff(result)
+    record: dict[str, Any] = {
+        "log": "diff.hydration",
+        "event_type": event.event_type,
+        "workspace_id": event.workspace_id,
+        "project_id": event.project_id,
+        "pull_number": pull_number,
+        "source": source,
+        "fetch_attempted": fetched,
+        "files_count": _diff_files_count(result),
+        "has_usable_diff": hydrated,
+        "result_present": result is not None,
+    }
+    if skip_reason is not None:
+        record["skip_reason"] = skip_reason
+    if fetch_error is not None:
+        record["fetch_error"] = fetch_error
+    if not hydrated:
+        record["guard"] = "pull_request_diff carries no file patches; review cannot be grounded"
+    log_json(get_logger(), logging.INFO if hydrated else logging.WARNING, record)
 
 
 PROJECT_WORK_ITEMS_CONTEXT_LIMIT = 100
