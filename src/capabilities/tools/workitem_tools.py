@@ -176,6 +176,7 @@ class CreateWorkItemTreeTool(BaseAgentTool):
         root_parent_id = _valid_uuid_or_none(root_parent_id)
         requested_by_user_id = _requested_by_user_id(action.input, context)
         known_usernames = _known_member_usernames(context)
+        unresolved_assignees = _collect_unresolved_assignees(items, known_usernames)
         for node in items:
             _rollup_assignee_usernames(node, known_usernames)
         created: list[dict[str, Any]] = []
@@ -192,16 +193,21 @@ class CreateWorkItemTreeTool(BaseAgentTool):
                 created=created,
             )
 
+        output: dict[str, Any] = {
+            "projectId": project_id,
+            "createdCount": len(created),
+            "items": created,
+        }
+        if unresolved_assignees:
+            # Surfaced so an assignment that silently went missing is debuggable
+            # from the run trace instead of looking like the model never assigned.
+            output["unresolvedAssignees"] = unresolved_assignees
         return ToolResult(
             plan_id=action.plan_id,
             action_id=action.action_id,
             tool_name=self.name,
             success=True,
-            output={
-                "projectId": project_id,
-                "createdCount": len(created),
-                "items": created,
-            },
+            output=output,
         )
 
     def _create_node(
@@ -214,7 +220,7 @@ class CreateWorkItemTreeTool(BaseAgentTool):
         context: AgentContext,
         action: PlannedAction,
         requested_by_user_id: str | None,
-        known_usernames: set[str],
+        known_usernames: dict[str, str],
         created: list[dict[str, Any]],
     ) -> None:
         payload = _filter_payload(node, WORK_ITEM_TREE_NODE_FIELDS)
@@ -666,31 +672,80 @@ def _valid_uuid_or_none(value: Any) -> str | None:
         return None
 
 
-def _known_member_usernames(context: AgentContext) -> set[str]:
-    usernames: set[str] = set()
+def _known_member_usernames(context: AgentContext) -> dict[str, str]:
+    """Canonical username resolver built from hydrated member context.
+
+    Models frequently reference people by display name, userId, or with
+    different casing; dropping those silently produced unassigned items. Any
+    of username, fullName, or userId (case-insensitive) resolves to the exact
+    username value the work item API accepts.
+    """
+    resolver: dict[str, str] = {}
     for key in _MEMBER_ENTITY_KEYS:
         members = context.entities.get(key)
         if not isinstance(members, list):
             continue
         for member in members:
-            if isinstance(member, dict):
-                username = str(member.get("username") or "").strip()
-                if username:
-                    usernames.add(username)
-    return usernames
+            if not isinstance(member, dict):
+                continue
+            username = str(member.get("username") or "").strip()
+            if not username:
+                continue
+            resolver.setdefault(username.lower(), username)
+            full_name = str(member.get("fullName") or "").strip()
+            if full_name:
+                resolver.setdefault(full_name.lower(), username)
+            user_id = str(member.get("userId") or "").strip()
+            if user_id:
+                resolver.setdefault(user_id.lower(), username)
+    return resolver
 
 
-def _clean_usernames(raw: Any, known_usernames: set[str]) -> list[str]:
+def _collect_unresolved_assignees(
+    items: list[Any],
+    known_usernames: dict[str, str],
+) -> list[dict[str, Any]]:
+    """Names that resolve to no known member, reported per task title.
+
+    Collected before assignee roll-up scrubs them, so a dropped assignment is
+    debuggable from the run trace instead of looking like the model never
+    assigned anyone.
+    """
+    if not known_usernames:
+        return []
+    unresolved: list[dict[str, Any]] = []
+    for node in items:
+        if not isinstance(node, dict):
+            continue
+        raw = node.get("assigneeUsernames")
+        if isinstance(raw, list):
+            missing = [
+                str(name).strip()
+                for name in raw
+                if str(name or "").strip() and str(name).strip().lower() not in known_usernames
+            ]
+            if missing:
+                unresolved.append({"title": str(node.get("title") or ""), "unresolved": missing})
+        children = node.get("children")
+        if isinstance(children, list):
+            unresolved.extend(_collect_unresolved_assignees(children, known_usernames))
+    return unresolved
+
+
+def _clean_usernames(raw: Any, known_usernames: dict[str, str]) -> list[str]:
     usernames = raw if isinstance(raw, list) else [raw]
     cleaned: list[str] = []
     for username in usernames:
         name = str(username or "").strip()
-        if name and name not in cleaned and (not known_usernames or name in known_usernames):
-            cleaned.append(name)
+        if not name:
+            continue
+        resolved = known_usernames.get(name.lower()) if known_usernames else name
+        if resolved and resolved not in cleaned:
+            cleaned.append(resolved)
     return cleaned
 
 
-def _rollup_assignee_usernames(node: dict[str, Any], known_usernames: set[str]) -> list[str]:
+def _rollup_assignee_usernames(node: dict[str, Any], known_usernames: dict[str, str]) -> list[str]:
     """Propagate every descendant's assignees onto its ancestors.
 
     A parent work item must list everyone working under it, so each node's
@@ -709,7 +764,7 @@ def _rollup_assignee_usernames(node: dict[str, Any], known_usernames: set[str]) 
     return merged
 
 
-def _normalize_node_payload(payload: dict[str, Any], known_usernames: set[str]) -> None:
+def _normalize_node_payload(payload: dict[str, Any], known_usernames: dict[str, str]) -> None:
     """Drop or fix values the Prism work item API would reject with a 400/404.
 
     One bad enum, date, or hallucinated assignee must not abort the whole tree:

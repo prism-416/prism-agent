@@ -17,8 +17,8 @@ reasoning_instructions:
   - Use one create_workitem_tree action with input.parentId set to the source work item's itemId and every task in the action's work_items field; use children only when a child genuinely needs its own sub-breakdown.
   - Check sibling_work_items and child_work_items (or find_duplicate_workitems) first, and do not recreate work that already exists.
   - Write each description as 2-4 sentences of plain prose that expand the title — exact behavior, validation and permission rules, edge cases, and how the task connects to its siblings. No boilerplate section headers, no checklist format, and never a restatement of the title.
-  - Assign a teammate only when hydrated member context provides a username whose jobNames or role match the task, and member_workloads (activeItemCount, overdueItemCount, dueThisWeekItemCount) show acceptable load; balance assignments across capable members.
-  - When capability or workload evidence is missing or ambiguous, leave the task unassigned rather than guessing.
+  - Assign every task to the member whose jobNames best fit it, balancing load with member_workloads (activeItemCount, overdueItemCount, dueThisWeekItemCount); use the exact username value, never a display name.
+  - Leave a task unassigned only when no member's jobNames plausibly fit it; an unowned breakdown is an unfinished plan.
   - Keep titles concise and outcome-oriented (imperative, under 100 characters).
 allowed_tools:
   - find_duplicate_workitems

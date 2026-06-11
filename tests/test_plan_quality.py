@@ -211,3 +211,36 @@ def test_critic_revises_once_then_accepts(prompts_path) -> None:
     assert "A reviewer found these problems" not in agent.user_prompts[0]
     assert "A reviewer found these problems" in agent.user_prompts[1]
     assert plan.actions[0].input["items"][0]["title"] == "Build feature"
+
+
+def test_under_assignment_is_flagged_with_capacity_hint() -> None:
+    items = [{"title": f"Task {index}", "description": GOOD_DESCRIPTION} for index in range(6)]
+    items[0]["assigneeUsernames"] = ["alice"]
+    entities = {
+        "project_members": [{"username": "alice"}, {"username": "bob"}],
+        "member_workloads": [
+            {"username": "alice", "activeItemCount": 9},
+            {"username": "bob", "activeItemCount": 1},
+        ],
+    }
+
+    issues = plan_quality_issues(_plan_with_items(items), entities)
+
+    assert len(issues) == 1
+    assert "1 of 6 tasks have an assignee" in issues[0]
+    assert "bob" in issues[0]
+    assert "alice" not in issues[0].split("capacity:")[-1]
+
+
+def test_fully_assigned_plan_passes_ratio_check() -> None:
+    items = [
+        {
+            "title": f"Task {index}",
+            "description": GOOD_DESCRIPTION,
+            "assigneeUsernames": [["alice", "bob"][index % 2]],
+        }
+        for index in range(6)
+    ]
+    entities = {"project_members": [{"username": "alice"}, {"username": "bob"}]}
+
+    assert plan_quality_issues(_plan_with_items(items), entities) == []

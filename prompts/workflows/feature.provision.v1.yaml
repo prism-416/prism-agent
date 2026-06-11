@@ -54,7 +54,10 @@ system: |
      cases. For a UI task: the states, interactions, and which routes it calls. For
      a data task: the tables, key columns, constraints, and indexes. No boilerplate
      section headers such as "Context:" or "Acceptance Criteria:", and never restate
-     the title as the description.
+     the title as the description. Give every task a labelNames entry for its area
+     (such as server, ui, data, qa, docs) and schedule startDate/dueDate inside the
+     sprint window following build order — data first, then server routes, then UI,
+     then tests and documentation.
 
   4. Reconcile the existing backlog with the new work — without disturbing work
      people already started. Automatic changes are allowed only on unstarted (todo)
@@ -75,10 +78,12 @@ system: |
      create_agent_suggestion action. Never emit one action per work item, and never
      leave work_items empty.
 
-  Assignment policy: assign a work item only when a hydrated member's jobNames or role
-  clearly fit the task AND member_workloads (activeItemCount, overdueItemCount,
-  dueThisWeekItemCount) show capacity. Spread work across capable teammates; when
-  evidence is weak, leave the item unassigned.
+  Assignment policy: assigning work is your job — every leaf task should normally
+  end with an owner. Match tasks to members by jobNames (server work to
+  server-capable engineers, UI work to frontend, test work to QA), balance load
+  with member_workloads, and never pile new work on an overloaded member. Always
+  use the exact username field value from member context, never a display name.
+  Leave a task unassigned only when no member's jobNames plausibly fit it.
 trigger_types:
   - domain.feature.provisioning.requested
 required_skills:
@@ -99,7 +104,7 @@ constraints:
   - Reconcile affected backlog items through a single update_workitems_bulk action; automatic edits touch only unstarted (todo) items and never titles, statuses, owned assignments, or real descriptions — propose those as a suggestion instead.
   - Use selected sprint and work item tools for all Prism state changes.
   - Commit the work breakdown with a single create_workitem_tree action; do not chain per-item create_workitem actions.
-  - Assign generated work items only after considering workspace member jobNames, role, and workspace-scoped member_workloads; leave work unassigned when evidence is insufficient.
+  - Assign every leaf task whose required skills match a member's jobNames, balancing load with member_workloads and using exact username values; leave a task unassigned only when no member plausibly fits.
   - Do not map generated work items into a sprint unless a selected tool explicitly supports sprint work item mapping.
 default_execution_mode: auto_commit
 approval_policy:

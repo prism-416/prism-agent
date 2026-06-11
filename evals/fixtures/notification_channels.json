@@ -159,6 +159,7 @@
     "forbidden_existing_titles": [
       "Notification event records & storage",
       "Per-user notification preferences with quiet hours"
-    ]
+    ],
+    "min_assigned_leaf_ratio": 0.6
   }
 }

@@ -148,6 +148,14 @@ def test_feature_provision_plan_quality(fixture_name: str) -> None:
     if unknown_assignees:
         failures.append(f"assignees outside the team: {sorted(unknown_assignees)}")
 
+    leaves = [n for n in nodes if not n.get("children")]
+    assigned = [n for n in leaves if n.get("assigneeUsernames")]
+    min_ratio = expectations.get("min_assigned_leaf_ratio")
+    if min_ratio and leaves and len(assigned) / len(leaves) < min_ratio:
+        failures.append(
+            f"only {len(assigned)}/{len(leaves)} leaf tasks assigned (< {min_ratio:.0%})"
+        )
+
     forbidden = {t.lower() for t in expectations.get("forbidden_existing_titles", [])}
     recreated = [
         str(n.get("title")) for n in nodes if str(n.get("title", "")).strip().lower() in forbidden

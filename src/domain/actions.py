@@ -35,9 +35,15 @@ class WorkItemLeafDraft(BaseModel):
     description: str = ""
     start_date: str | None = None
     due_date: str | None = None
-    priority: str | None = None
+    priority: str | None = Field(default=None, description="low | medium | high | urgent")
     status: str | None = None
-    assignee_usernames: list[str] = Field(default_factory=list)
+    assignee_usernames: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Exact username values from hydrated member context (the username "
+            "field, never a display name)."
+        ),
+    )
     label_names: list[str] = Field(default_factory=list)
 
 
