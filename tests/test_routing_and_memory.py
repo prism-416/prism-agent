@@ -806,3 +806,40 @@ def test_auto_commit_actions_chain_within_one_invocation() -> None:
     assert "action.chained" in trace_names
     assert "plan.completed" in trace_names
     assert trace_names.count("action.completed") == 2
+
+
+def test_suggestion_tool_coerces_non_dict_proposed_changes(prompts_path) -> None:
+    from infrastructure.registries.prompt_registry import PromptRegistry
+    from infrastructure.registries.tool_registry import ToolRegistry
+
+    registry = ToolRegistry.from_prompt_registry(PromptRegistry(prompts_path))
+    tool = registry.get("create_agent_suggestion")
+    source_event = EventEnvelope.wrap(
+        DomainEvent(event_type="story.created", workspace_id="w1", project_id="p1")
+    )
+    context = AgentContext(
+        workspace_id="w1",
+        project_id="p1",
+        source_event=source_event,
+        workflow_id="backlog.refine",
+    )
+    action = PlannedAction(
+        plan_id="plan-1",
+        action_type="suggestion",
+        tool_name="create_agent_suggestion",
+        instruction="Suggest reassigning backlog tasks to balance team workload.",
+        input={
+            "title": "Rebalance workload",
+            "body": "Reassign tasks to spread load.",
+            "proposed_changes": "Reassign tasks from 'user_a' to 'sohnmandu'",
+        },
+        idempotency_key="k1",
+    )
+
+    result = tool.execute(action, context)
+
+    assert result.success is True
+    assert result.suggestion is not None
+    assert result.suggestion.proposed_changes == {
+        "summary": "Reassign tasks from 'user_a' to 'sohnmandu'"
+    }
