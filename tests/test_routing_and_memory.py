@@ -303,6 +303,7 @@ def test_action_handler_skips_hydrated_completed_action_and_enqueues_next() -> N
         tool_name="update_workitem_status",
         instruction="Mark the task done.",
         depends_on=[first_action.action_id],
+        requires_approval=True,
         idempotency_key="k2",
     )
     plan = plan.model_copy(update={"actions": [first_action, second_action]})
@@ -320,6 +321,8 @@ def test_action_handler_skips_hydrated_completed_action_and_enqueues_next() -> N
         )
     )
 
+    # Approval-gated work still crosses the queue; auto-commit work is chained
+    # in the same invocation (covered separately below).
     message = queue.dequeue()
     assert executor.called is False
     assert message is not None
@@ -663,3 +666,76 @@ class _CapturingAgentRunSync:
 
     def record_action_state(self, plan, action, *, event_name, message=None) -> None:
         self.calls.append((plan, action, event_name, message))
+
+
+def test_auto_commit_actions_chain_within_one_invocation() -> None:
+    store = MemoryStateStore()
+    queue = MemoryQueue()
+    handler = ActionEventHandler(
+        _ResultExecutor(success=True),
+        _CommitValidator(),
+        store,
+        queue,
+        AgentRunSync(PrismApiClient(), enabled=False),
+    )
+    source_event = EventEnvelope.wrap(
+        DomainEvent(event_type="story.created", workspace_id="w1", project_id="p1")
+    )
+    snapshot = ContextSnapshot(
+        workspace_id="w1",
+        project_id="p1",
+        workflow_id="story.decompose",
+        context=AgentContext(
+            workspace_id="w1",
+            project_id="p1",
+            source_event=source_event,
+            workflow_id="story.decompose",
+        ),
+    )
+    plan = AgentPlan(
+        source_event_id=source_event.event_id,
+        workspace_id="w1",
+        project_id="p1",
+        goal="test",
+        prompt_id="story.decompose",
+        prompt_version="1.0.0",
+        context_snapshot_ref=snapshot.ref,
+    )
+    first = PlannedAction(
+        plan_id=plan.plan_id,
+        action_type="mutation",
+        tool_name="create_sprint",
+        instruction="Create sprint.",
+        idempotency_key="k1",
+    )
+    second = PlannedAction(
+        plan_id=plan.plan_id,
+        action_type="mutation",
+        tool_name="create_workitem_tree",
+        instruction="Create breakdown.",
+        depends_on=[first.action_id],
+        idempotency_key="k2",
+    )
+    plan = plan.model_copy(update={"actions": [first, second]})
+    store.save_context_snapshot(snapshot)
+    store.save_plan(plan)
+
+    handler.handle(
+        EventEnvelope.wrap(
+            AgentActionEvent(
+                workspace_id="w1",
+                project_id="p1",
+                plan_id=plan.plan_id,
+                action_id=first.action_id,
+            )
+        )
+    )
+
+    # Both actions completed in one invocation; nothing crossed the queue.
+    assert queue.dequeue() is None
+    final_plan = store.get_plan("w1", plan.plan_id)
+    assert final_plan.status.value == "completed"
+    trace_names = [trace.event_name for trace in store.traces]
+    assert "action.chained" in trace_names
+    assert "plan.completed" in trace_names
+    assert trace_names.count("action.completed") == 2

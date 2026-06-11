@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 from uuid import UUID
 
@@ -28,6 +29,7 @@ UPDATE_WORK_ITEM_FIELDS = CREATE_WORK_ITEM_FIELDS
 WORK_ITEM_TREE_NODE_FIELDS = CREATE_WORK_ITEM_FIELDS - {"parentId"}
 MAX_WORK_ITEM_TREE_DEPTH = 3
 MAX_WORK_ITEM_TREE_ITEMS = 100
+MAX_PARALLEL_CREATES = 8
 
 WORK_ITEM_PRIORITIES = {"low", "medium", "high", "urgent"}
 WORK_ITEM_STATUSES = {"todo", "in_progress", "in_review", "done", "archived"}
@@ -180,18 +182,32 @@ class CreateWorkItemTreeTool(BaseAgentTool):
         for node in items:
             _rollup_assignee_usernames(node, known_usernames)
         created: list[dict[str, Any]] = []
-        for node in items:
-            self._create_node(
-                node,
-                parent_id=root_parent_id,
-                depth=1,
+        pending: list[tuple[dict[str, Any], str | None, int]] = [
+            (node, root_parent_id, 1) for node in items
+        ]
+        while pending:
+            item_ids = self._create_level(
+                pending,
                 project_id=project_id,
                 context=context,
                 action=action,
                 requested_by_user_id=requested_by_user_id,
                 known_usernames=known_usernames,
-                created=created,
+                start_index=len(created),
             )
+            next_pending: list[tuple[dict[str, Any], str | None, int]] = []
+            for (node, parent_id, depth), item_id in zip(pending, item_ids):
+                created.append(
+                    {
+                        "itemId": item_id,
+                        "parentId": parent_id,
+                        "depth": depth,
+                        "title": str(node.get("title") or "Generated task")[:100],
+                    }
+                )
+                for child in node.get("children") or []:
+                    next_pending.append((child, item_id, depth + 1))
+            pending = next_pending
 
         output: dict[str, Any] = {
             "projectId": project_id,
@@ -210,57 +226,57 @@ class CreateWorkItemTreeTool(BaseAgentTool):
             output=output,
         )
 
-    def _create_node(
+    def _create_level(
         self,
-        node: dict[str, Any],
+        level: list[tuple[dict[str, Any], str | None, int]],
         *,
-        parent_id: str | None,
-        depth: int,
         project_id: str,
         context: AgentContext,
         action: PlannedAction,
         requested_by_user_id: str | None,
         known_usernames: dict[str, str],
-        created: list[dict[str, Any]],
-    ) -> None:
-        payload = _filter_payload(node, WORK_ITEM_TREE_NODE_FIELDS)
-        payload["title"] = str(node.get("title") or "Generated task")[:100]
-        payload.setdefault("description", str(node.get("description") or action.instruction))
-        _normalize_node_payload(payload, known_usernames)
-        if parent_id:
-            payload["parentId"] = parent_id
+        start_index: int,
+    ) -> list[str]:
+        """Create one hierarchy level, siblings concurrently, parents-first overall.
+
+        A 40-item breakdown created one request at a time dominates the action's
+        wall time; siblings have no ordering dependency, so each level fans out
+        across a small thread pool while levels stay strictly sequential (a
+        child needs its parent's Prism-assigned id).
+        """
+        payloads: list[dict[str, Any]] = []
+        for node, parent_id, _depth in level:
+            payload = _filter_payload(node, WORK_ITEM_TREE_NODE_FIELDS)
+            payload["title"] = str(node.get("title") or "Generated task")[:100]
+            payload.setdefault("description", str(node.get("description") or action.instruction))
+            _normalize_node_payload(payload, known_usernames)
+            if parent_id:
+                payload["parentId"] = parent_id
+            payloads.append(payload)
+
         if self.prism_client and self.prism_client.is_configured:
             if requested_by_user_id:
-                payload.setdefault("requestedByUserId", requested_by_user_id)
-            output = self.prism_client.create_work_item(project_id, payload)
+                for payload in payloads:
+                    payload.setdefault("requestedByUserId", requested_by_user_id)
+            client = self.prism_client
+            with ThreadPoolExecutor(max_workers=min(MAX_PARALLEL_CREATES, len(payloads))) as pool:
+                outputs = list(
+                    pool.map(lambda payload: client.create_work_item(project_id, payload), payloads)
+                )
         else:
-            output = {
-                "itemId": f"local-{action.action_id}-{len(created) + 1}",
-                "projectId": project_id,
-                "workspaceId": context.workspace_id,
-                **payload,
-            }
-        item_id = str(output.get("itemId") or output.get("id") or f"local-{action.action_id}")
-        created.append(
-            {
-                "itemId": item_id,
-                "parentId": parent_id,
-                "depth": depth,
-                "title": payload["title"],
-            }
-        )
-        for child in node.get("children") or []:
-            self._create_node(
-                child,
-                parent_id=item_id,
-                depth=depth + 1,
-                project_id=project_id,
-                context=context,
-                action=action,
-                requested_by_user_id=requested_by_user_id,
-                known_usernames=known_usernames,
-                created=created,
-            )
+            outputs = [
+                {
+                    "itemId": f"local-{action.action_id}-{start_index + offset + 1}",
+                    "projectId": project_id,
+                    "workspaceId": context.workspace_id,
+                    **payload,
+                }
+                for offset, payload in enumerate(payloads)
+            ]
+        return [
+            str(output.get("itemId") or output.get("id") or f"local-{action.action_id}")
+            for output in outputs
+        ]
 
 
 class UpdateWorkItemTool(BaseAgentTool):
