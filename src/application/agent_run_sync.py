@@ -218,6 +218,7 @@ def _agent_run_create_payload(
         "systemPromptVersion": prompt_version[:100],
         "triggerType": _trigger_type(context),
         "status": "running",
+        "createdAt": context.source_event.event.occurred_at.isoformat(),
     }
     triggered_by_user_id = _triggered_by_user_id(context)
     if triggered_by_user_id:

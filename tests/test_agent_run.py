@@ -142,6 +142,7 @@ def test_agent_run_sync_upserts_plan_and_action_state() -> None:
             "systemPromptVersion": "1.0.0",
             "triggerType": "event",
             "status": "running",
+            "createdAt": source_event.event.occurred_at.isoformat(),
         },
     )
     assert ("POST", "/workspaces/w1/agent-runs/internal") in methods_and_paths
@@ -234,6 +235,7 @@ def test_domain_event_handler_creates_agent_run_before_planning() -> None:
             "systemPromptVersion": "1.0.0",
             "triggerType": "event",
             "status": "running",
+            "createdAt": source_event.event.occurred_at.isoformat(),
         },
     )
     assert prism_client.calls[1][1].endswith("/run-before-plan/steps")
