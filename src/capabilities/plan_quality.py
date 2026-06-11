@@ -15,6 +15,9 @@ MIN_DESCRIPTION_LENGTH = 30
 MAX_EXAMPLES_PER_ISSUE = 5
 ASSIGNMENT_CONCENTRATION_THRESHOLD = 0.6
 MIN_ASSIGNED_LEAVES_FOR_BALANCE_CHECK = 6
+MIN_ASSIGNMENT_RATIO = 0.5
+MIN_LEAVES_FOR_ASSIGNMENT_RATIO_CHECK = 5
+OVERLOADED_ACTIVE_ITEM_COUNT = 8
 
 _BOILERPLATE_HEADINGS = ("acceptance criteria", "context:")
 _EXISTING_WORK_ENTITY_KEYS = (
@@ -216,13 +219,16 @@ def _description_issues(nodes: list[dict[str, Any]]) -> list[str]:
 
 def _assignment_issues(nodes: list[dict[str, Any]], entities: dict[str, Any]) -> list[str]:
     known_member_count = _known_member_count(entities)
-    if known_member_count < 3:
+    if known_member_count < 2:
         return []
+    issues: list[str] = []
     counts: dict[str, int] = {}
+    leaves = 0
     assigned_leaves = 0
     for node in nodes:
         if node.get("children"):
             continue
+        leaves += 1
         assignees = node.get("assigneeUsernames")
         if not isinstance(assignees, list) or not assignees:
             continue
@@ -231,17 +237,47 @@ def _assignment_issues(nodes: list[dict[str, Any]], entities: dict[str, Any]) ->
             name = str(username or "").strip()
             if name:
                 counts[name] = counts.get(name, 0) + 1
-    if assigned_leaves < MIN_ASSIGNED_LEAVES_FOR_BALANCE_CHECK or not counts:
+    if (
+        leaves >= MIN_LEAVES_FOR_ASSIGNMENT_RATIO_CHECK
+        and assigned_leaves / leaves < MIN_ASSIGNMENT_RATIO
+    ):
+        available = _members_with_capacity(entities)
+        member_hint = f" Members with capacity: {', '.join(available)}." if available else ""
+        issues.append(
+            f"Only {assigned_leaves} of {leaves} tasks have an assignee. Assigning "
+            "work is the project manager's job: give every task whose required "
+            "skills match a member's jobNames an owner, using exact username "
+            f"values.{member_hint}"
+        )
+    if (
+        known_member_count >= 3
+        and assigned_leaves >= MIN_ASSIGNED_LEAVES_FOR_BALANCE_CHECK
+        and counts
+    ):
+        top_username, top_count = max(counts.items(), key=lambda entry: entry[1])
+        if top_count / assigned_leaves > ASSIGNMENT_CONCENTRATION_THRESHOLD:
+            issues.append(
+                f"Assignment is too concentrated: {top_username} holds {top_count} of "
+                f"{assigned_leaves} assigned tasks while {known_member_count} members "
+                "are available. Rebalance across capable teammates or leave uncertain "
+                "tasks unassigned."
+            )
+    return issues
+
+
+def _members_with_capacity(entities: dict[str, Any]) -> list[str]:
+    workloads = entities.get("member_workloads")
+    if not isinstance(workloads, list):
         return []
-    top_username, top_count = max(counts.items(), key=lambda entry: entry[1])
-    if top_count / assigned_leaves <= ASSIGNMENT_CONCENTRATION_THRESHOLD:
-        return []
-    return [
-        f"Assignment is too concentrated: {top_username} holds {top_count} of "
-        f"{assigned_leaves} assigned tasks while {known_member_count} members are "
-        "available. Rebalance across capable teammates or leave uncertain tasks "
-        "unassigned."
-    ]
+    available: list[str] = []
+    for workload in workloads:
+        if not isinstance(workload, dict):
+            continue
+        username = str(workload.get("username") or "").strip()
+        active = workload.get("activeItemCount")
+        if username and (not isinstance(active, int) or active < OVERLOADED_ACTIVE_ITEM_COUNT):
+            available.append(username)
+    return available[:MAX_EXAMPLES_PER_ISSUE]
 
 
 def _known_member_count(entities: dict[str, Any]) -> int:

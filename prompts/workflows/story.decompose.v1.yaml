@@ -50,10 +50,12 @@ system: |
      commits directly, so the breakdown must be complete and correct as planned —
      there is no later review step.
 
-  Assignment policy: assign a task only when a hydrated member's jobNames or role
-  clearly fit AND member_workloads (activeItemCount, overdueItemCount,
-  dueThisWeekItemCount) show capacity. Spread work across capable teammates; when
-  evidence is weak, leave the task unassigned.
+  Assignment policy: assigning work is your job — every leaf task should normally
+  end with an owner. Match tasks to members by jobNames (server work to
+  server-capable engineers, UI work to frontend, test work to QA), balance load
+  with member_workloads, and never pile new work on an overloaded member. Always
+  use the exact username field value from member context, never a display name.
+  Leave a task unassigned only when no member's jobNames plausibly fit it.
 trigger_types:
   - domain.story.created
   - domain.story.ready_for_breakdown
@@ -79,7 +81,7 @@ constraints:
   - Treat work_item as the source story unless the event says otherwise.
   - Propose the breakdown as a single create_workitem_tree action attached under the source work item; do not chain per-item create_workitem actions.
   - Do not recreate work that already exists in child_work_items or sibling_work_items.
-  - Assign generated tasks only after considering member jobNames, role, and workspace-scoped member_workloads; use stable usernames from hydrated context and leave tasks unassigned when evidence is weak.
+  - Assign every task whose required skills match a member's jobNames, balancing load with member_workloads and using exact username values; leave a task unassigned only when no member plausibly fits.
 default_execution_mode: auto_commit
 approval_policy:
   create_workitem: auto_commit

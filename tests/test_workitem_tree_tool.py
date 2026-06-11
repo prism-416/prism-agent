@@ -595,3 +595,85 @@ def test_tree_tool_is_registered_and_allowed_by_pm_skills(prompts_path) -> None:
     definition = tool_registry.definition("create_workitem_tree")
     assert definition.approval_policy == "auto_commit"
     assert definition.risk_level == "high"
+
+
+def test_assignees_resolve_display_names_and_casing(prompts_path) -> None:
+    client = _RecordingPrismClient()
+    tool = _tree_tool(prompts_path, prism_client=client)
+    event = DomainEvent(
+        event_type="story.created",
+        workspace_id="w1",
+        project_id="p1",
+        payload={
+            "entity_versions": {"story:s1": 1},
+            "project_members": [
+                {"userId": "u-1", "username": "alice", "fullName": "Alice Kim"},
+                {"userId": "u-2", "username": "bob", "fullName": "Bob Lee"},
+            ],
+        },
+    )
+    prompt_registry = PromptRegistry(prompts_path)
+    workflow = WorkflowRegistry.from_prompt_registry(prompt_registry).get("story.decompose")
+    context = (
+        ContextProvider(PrismApiClient(), prompt_registry)
+        .hydrate(EventEnvelope.wrap(event), workflow)
+        .context
+    )
+    action = _action(
+        {
+            "projectId": "p1",
+            "items": [
+                # Display name, wrong casing, and userId all resolve to usernames;
+                # an unknown person is dropped instead of failing the create.
+                {
+                    "title": "Task",
+                    "description": "Implements the route with validation and errors.",
+                    "assigneeUsernames": ["Alice Kim", "BOB", "u-1", "ghost"],
+                }
+            ],
+        }
+    )
+
+    result = tool.execute(action, context)
+
+    assert result.success is True
+    assert client.calls[0][1]["assigneeUsernames"] == ["alice", "bob"]
+
+
+def test_unresolved_assignees_are_reported(prompts_path) -> None:
+    client = _RecordingPrismClient()
+    tool = _tree_tool(prompts_path, prism_client=client)
+    event = DomainEvent(
+        event_type="story.created",
+        workspace_id="w1",
+        project_id="p1",
+        payload={
+            "entity_versions": {"story:s1": 1},
+            "project_members": [{"username": "alice"}],
+        },
+    )
+    prompt_registry = PromptRegistry(prompts_path)
+    workflow = WorkflowRegistry.from_prompt_registry(prompt_registry).get("story.decompose")
+    context = (
+        ContextProvider(PrismApiClient(), prompt_registry)
+        .hydrate(EventEnvelope.wrap(event), workflow)
+        .context
+    )
+    action = _action(
+        {
+            "projectId": "p1",
+            "items": [
+                {
+                    "title": "Task",
+                    "description": "Implements the route with validation and errors.",
+                    "assigneeUsernames": ["alice", "ghost-user"],
+                }
+            ],
+        }
+    )
+
+    result = tool.execute(action, context)
+
+    assert result.success is True
+    assert client.calls[0][1]["assigneeUsernames"] == ["alice"]
+    assert result.output["unresolvedAssignees"] == [{"title": "Task", "unresolved": ["ghost-user"]}]

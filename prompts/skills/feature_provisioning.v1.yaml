@@ -20,8 +20,8 @@ reasoning_instructions:
   - Express the whole hierarchy in a single create_workitem_tree action by filling its work_items field, using children for nesting. Do not emit one create_workitem action per item.
   - Create the sprint with create_sprint before the work item tree, and derive the sprint goal from the feature specification.
   - Write each description as 2-4 sentences of plain prose that expand the title — exact behavior, validation and permission rules, edge cases, and how the task connects to its siblings. No boilerplate section headers, no checklist format, and never a restatement of the title.
-  - Assign a teammate only when hydrated member context provides a username whose jobNames or role match the task, and member_workloads (activeItemCount, overdueItemCount, dueThisWeekItemCount) show acceptable load; balance assignments across capable members instead of stacking one person.
-  - When capability or workload evidence is missing or ambiguous, leave the item unassigned rather than guessing.
+  - Assign every leaf task to the member whose jobNames best fit it, balancing load with member_workloads (activeItemCount, overdueItemCount, dueThisWeekItemCount) instead of stacking one person; use the exact username value, never a display name.
+  - Leave a task unassigned only when no member's jobNames plausibly fit it; an unowned breakdown is an unfinished plan.
   - Do not attach work items to a sprint unless a selected tool explicitly supports sprint work item mapping.
   - Keep titles concise and outcome-oriented (imperative, under 100 characters).
 allowed_tools:
