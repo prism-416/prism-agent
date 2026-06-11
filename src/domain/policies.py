@@ -145,7 +145,9 @@ class StaleContextPolicy:
         stale: dict[str, dict[str, str | int | None]] = {}
         for entity_ref, expected in expected_versions.items():
             current = current_versions.get(entity_ref)
-            if current != expected:
+            # Only an observed, different version proves staleness; an absent
+            # current version means it could not be checked, not that it changed.
+            if current is not None and current != expected:
                 stale[entity_ref] = {"expected": expected, "current": current}
         return stale
 
