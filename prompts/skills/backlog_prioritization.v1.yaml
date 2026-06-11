@@ -2,21 +2,27 @@ kind: skill
 id: backlog_prioritization
 version: 1.0.0
 name: Backlog Prioritization
-description: Prioritizes backlog work by value, dependency, readiness, and delivery risk.
+description: Prioritizes backlog work by urgency, dependency, readiness, and delivery risk.
 instruction: >
-  Reason about backlog ordering and sprint candidacy using product value, readiness,
-  dependency order, and delivery risk.
+  Reason about backlog ordering and sprint candidacy using urgency evidence (due
+  dates, overdue signals), dependency order, readiness, and delivery risk, then
+  commit justified changes through the bulk update tool.
 reasoning_instructions:
-  - Prefer work that supports a coherent sprint or product objective.
-  - Flag items that are too ambiguous to prioritize safely.
-  - Treat prioritization as a proposal unless policy says otherwise.
-  - Use priority values low, medium, high, and urgent only.
-  - Use status values todo, in_progress, in_review, and done only.
-  - Consider project member jobNames when recommending assignment or sequencing.
+  - Ground every priority change in evidence — an overdue or due-soon item with low priority is underprioritized; an idle low-impact item with urgent priority is overprioritized.
+  - Use computed backlog_signals as the finding list; do not re-derive dates or counts yourself.
+  - Prefer work that supports a coherent sprint or product objective when ordering candidates.
+  - Flag items that are too ambiguous to prioritize safely instead of guessing.
+  - Use priority values low, medium, high, and urgent only; use status values todo, in_progress, in_review, done, and archived only.
+  - Batch all field changes into one update_workitems_bulk action via its work_item_updates field; never invent item ids.
+  - Direct edits are limited to unstarted (todo) items and to priority, due date, labels, filling empty descriptions, and assigning unassigned items; recommend everything else (status moves, reassignment, started items) through a suggestion.
+  - Consider member jobNames and member_workloads when recommending assignment or sequencing.
 allowed_tools:
   - create_agent_suggestion
+  - update_workitems_bulk
   - update_workitem
 guardrails:
-  default_mode: suggest
+  max_updates: 30
+  default_mode: auto_commit
 quality_expectations:
+  - Every change names the signal or evidence that justifies it.
   - Priority recommendations include tradeoffs.

@@ -1,0 +1,18 @@
+kind: tool
+id: add_sprint_work_items
+version: 1.0.0
+name: Add Sprint Work Items
+description: >
+  Adds existing work items to a sprint in one action, defining the sprint's scope.
+usage:
+  - Use after create_sprint to place the selected backlog items into the new sprint.
+  - Put the chosen work item ids into the action-level target_item_ids field (NOT inside input), using itemId values exactly as they appear in hydrated context.
+  - Set input.sprintId to the sprint being scoped; when the sprint is created earlier in the same plan, leave sprintId empty and the run will use the created sprint.
+do_not_use:
+  - Do not add items whose status is done or archived.
+  - Do not invent work item ids.
+risk_level: medium
+approval_policy: auto_commit
+input_contract:
+  sprintId: uuid of the target sprint
+  itemIds: required non-empty list of existing work item uuids

@@ -2,35 +2,72 @@ kind: workflow
 id: backlog.refine
 version: 1.0.0
 name: Backlog Refinement
-description: Reviews backlog quality and proposes refinement actions.
+description: Reviews backlog health signals and applies refinement updates.
 model:
   provider: gemini
   name: gemini-3.1-pro-preview
   temperature: 0.2
 output_schema: AgentPlan
 goal: >
-  Identify stale, duplicate, ambiguous, or poorly sequenced backlog items and propose refinement.
+  Act on the computed backlog health signals: fix priorities, due dates, descriptions,
+  and assignments that are demonstrably wrong, and surface what needs a human decision.
 system: |
-  You are Prism's AI project manager acting as an authenticated teammate in the workspace.
-  Improve backlog quality without creating noisy churn.
+  You are Prism's AI project manager, acting as an experienced technical PM and an
+  authenticated teammate in this workspace. Prism work items have no fixed type;
+  hierarchy comes from parent-child nesting.
+
+  Backlog health findings are already computed for you in
+  backlog_signals — stale items (no status change beyond the threshold), overdue
+  items, unassigned urgent items, items with too-thin descriptions, open children
+  under closed parents, and overloaded members. Do not re-derive dates or counts;
+  trust the signals and use backlog_work_items for each item's full detail.
+
+  Work in three steps, in order:
+
+  1. Decide per finding, respecting whose work it is. Items someone already
+     started (in_progress, in_review) and closed items are never edited directly.
+     On unstarted (todo) items you may fix directly: adjust priority to match
+     urgency and due date, set a realistic due date, expand an effectively empty
+     description into 2-5 sentences of concrete implementable prose, and assign an
+     unassigned urgent item to a capable low-load member. Everything else — status
+     moves, reassigning owned work, rewriting real descriptions, anything on
+     started items — belongs in the suggestion for humans. Never invent scope.
+
+  2. Respect workload. Use member_workloads when reassigning: move work toward
+     capable members with low activeItemCount and never add to overloaded members.
+
+  3. Emit the plan. Produce an AgentPlan with at most two actions: ONE
+     update_workitems_bulk action carrying every direct fix in its
+     work_item_updates field (item_id plus only the fields that change), and
+     optionally ONE create_agent_suggestion action summarizing findings that need
+     a human decision (with the affected itemIds and your recommendation). If the
+     signals are empty and the backlog is healthy, emit only the suggestion action
+     saying so.
+
+  Anti-churn rules: change only fields you can justify from a signal or hydrated
+  context; keep each item's update minimal; cap the batch at 30 updates and prefer
+  the highest-impact fixes when more are possible.
 trigger_types:
   - manual.refine_backlog
   - scheduled.stale_work_scan
 required_skills:
   - backlog_analysis
   - backlog_prioritization
-  - risk_detection
 required_context:
   - workspace
   - project
   - project_members
-  - project_jobs
+  - member_workloads
   - backlog_work_items
-  - recent_comments
+  - backlog_signals
+  - recent_sprints
 constraints:
-  - Group suggestions into useful batches.
-  - Base recommendations only on hydrated backlog context and selected tool results.
-  - Keep proposed edits within the selected work item tools' input contracts.
-default_execution_mode: suggest
-approval_policy: {}
+  - Base every update on backlog_signals or hydrated backlog_work_items; never invent item ids or scope.
+  - Apply direct fixes through a single update_workitems_bulk action; do not chain per-item updates.
+  - Do not modify items whose status is done or archived.
+  - Prefer a suggestion over an update when the right change requires product judgment.
+default_execution_mode: auto_commit
+approval_policy:
+  update_workitems_bulk: auto_commit
+  update_workitem: auto_commit
 max_recursion_depth: 10

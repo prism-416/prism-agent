@@ -49,6 +49,27 @@ class WorkItemDraft(WorkItemLeafDraft):
     children: list[WorkItemChildDraft] = Field(default_factory=list)
 
 
+class WorkItemUpdateDraft(BaseModel):
+    """A typed field-level update to one existing work item.
+
+    Same rationale as WorkItemLeafDraft: structured output cannot fill the
+    untyped action input, so bulk refinement updates travel here and are
+    materialized into the update tool's input contract. None means "leave the
+    field unchanged"; empty lists are also treated as no change.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    item_id: str
+    title: str | None = None
+    description: str | None = None
+    priority: str | None = None
+    status: str | None = None
+    due_date: str | None = None
+    assignee_usernames: list[str] = Field(default_factory=list)
+    label_names: list[str] = Field(default_factory=list)
+
+
 class PlannedAction(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -64,6 +85,21 @@ class PlannedAction(BaseModel):
             "For create_workitem_tree actions: the full work item breakdown. "
             "Each entry needs a title and description; use children to nest "
             "sub-items. Leave empty for other tools."
+        ),
+    )
+    work_item_updates: list[WorkItemUpdateDraft] = Field(
+        default_factory=list,
+        description=(
+            "For update_workitems_bulk actions: one entry per existing work "
+            "item to change, with only the fields that should change. Leave "
+            "empty for other tools."
+        ),
+    )
+    target_item_ids: list[str] = Field(
+        default_factory=list,
+        description=(
+            "For add_sprint_work_items actions: the itemIds of existing work "
+            "items to add to the sprint. Leave empty for other tools."
         ),
     )
     depends_on: list[str] = Field(default_factory=list)

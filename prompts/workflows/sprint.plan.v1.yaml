@@ -2,36 +2,74 @@ kind: workflow
 id: sprint.plan
 version: 1.0.0
 name: Sprint Planning
-description: Creates a sprint planning proposal from backlog, capacity, and risk signals.
+description: Plans the next sprint from backlog, capacity, and health signals.
 model:
   provider: gemini
   name: gemini-3.1-pro-preview
   temperature: 0.2
 output_schema: AgentPlan
 goal: >
-  Propose a balanced sprint scope with sequencing, capacity notes, and risk tradeoffs.
+  Propose and provision the next sprint: a coherent goal, a capacity-sized scope of
+  ready backlog items mapped into the sprint, and assignments balanced across the team.
 system: |
-  You are Prism's AI project manager acting as an authenticated teammate in the workspace.
-  Plan sprint scope conservatively against capacity.
+  You are Prism's AI project manager, acting as an experienced technical PM and an
+  authenticated teammate in this workspace. Prism work items have no fixed type;
+  hierarchy comes from parent-child nesting.
+
+  Work in four steps, in order:
+
+  1. Assess capacity. From member_workloads, judge how much new work each member
+     can take (activeItemCount, overdueItemCount, dueThisWeekItemCount). From
+     sprints and recent_sprints, infer the sprint cadence (typical length, current
+     active sprint if any) and pick start/end dates that continue it; default to
+     two weeks starting now when there is no history.
+
+  2. Select scope. From backlog_work_items, pick READY items: clear descriptions,
+     status todo, not flagged in backlog_signals as too thin to act on. Prefer
+     overdue and urgent items first, then items that complete a coherent product
+     objective together. Size the selection to team capacity — a member at or over
+     the overload threshold gets nothing new. Leaf tasks belong in the sprint;
+     do not pull in a parent when only some of its children are ready.
+
+  3. Decide assignments. Every selected item should end the planning assigned to a
+     capable member (jobNames fit) with room, or be explicitly left unassigned
+     with the reason in the suggestion.
+
+  4. Emit the plan. Produce an AgentPlan with at most four actions, in this order:
+     ONE create_sprint action (name and a goal sentence derived from the selected
+     scope, with the chosen dates); ONE add_sprint_work_items action whose
+     target_item_ids field lists every selected item id (leave input.sprintId
+     empty; it resolves to the sprint created in this plan); optionally ONE
+     update_workitems_bulk action in work_item_updates for assignment or priority
+     fixes on the selected items; and ONE create_agent_suggestion action
+     summarizing the sprint goal, the scope rationale, capacity notes, and risks.
+
+  Never invent item ids; select only ids present in backlog_work_items. Do not
+  include done or archived items.
 trigger_types:
   - scheduled.sprint_planning
   - manual.plan_sprint
 required_skills:
   - backlog_prioritization
   - sprint_capacity_planning
-  - risk_detection
 required_context:
   - workspace
   - project
   - project_members
-  - project_jobs
-  - sprints
+  - member_workloads
   - backlog_work_items
+  - backlog_signals
+  - sprints
   - recent_sprints
 constraints:
   - Optimize for a coherent sprint goal, not the largest possible item count.
   - Use sprint statuses planned, active, closed, and cancelled only.
-  - Use project member jobNames as capability context when reasoning about scope.
-default_execution_mode: suggest
-approval_policy: {}
+  - Select work item ids only from hydrated backlog_work_items.
+  - Map selected items into the sprint with a single add_sprint_work_items action.
+  - Respect member capacity; never assign new work to overloaded members.
+default_execution_mode: auto_commit
+approval_policy:
+  create_sprint: auto_commit
+  add_sprint_work_items: auto_commit
+  update_workitems_bulk: auto_commit
 max_recursion_depth: 10

@@ -9,8 +9,10 @@ from capabilities.skills import RuntimeSkill
 from capabilities.tools.base import BaseAgentTool
 from capabilities.tools.workitem_tools import (
     coerce_work_item_tree_items,
-    materialize_work_item_tree_actions,
+    coerce_work_item_updates,
+    materialize_typed_action_inputs,
     validate_work_item_tree,
+    validate_work_item_updates,
 )
 from domain.context import AgentContext
 from domain.plans import AgentPlan
@@ -78,15 +80,29 @@ def _plan_defect(plan: AgentPlan) -> str | None:
     if not plan.actions:
         return _EMPTY_PLAN_FEEDBACK
     for action in plan.actions:
-        if action.tool_name != "create_workitem_tree":
-            continue
-        error = validate_work_item_tree(coerce_work_item_tree_items(action.input))
-        if error:
+        if action.tool_name == "create_workitem_tree":
+            error = validate_work_item_tree(coerce_work_item_tree_items(action.input))
+            if error:
+                return (
+                    f"The previous create_workitem_tree action was invalid: {error} "
+                    "Put the complete work item breakdown into the action's work_items "
+                    "field: a non-empty array of objects, each with a title, a "
+                    "description, and an optional children array of nested work items."
+                )
+        elif action.tool_name == "update_workitems_bulk":
+            error = validate_work_item_updates(coerce_work_item_updates(action.input))
+            if error:
+                return (
+                    f"The previous update_workitems_bulk action was invalid: {error} "
+                    "Put every change into the action's work_item_updates field: a "
+                    "non-empty array of objects, each with the item_id of an existing "
+                    "work item and only the fields that should change."
+                )
+        elif action.tool_name == "add_sprint_work_items" and not action.input.get("itemIds"):
             return (
-                f"The previous create_workitem_tree action was invalid: {error} "
-                "Put the complete work item breakdown into the action's work_items "
-                "field: a non-empty array of objects, each with a title, a "
-                "description, and an optional children array of nested work items."
+                "The previous add_sprint_work_items action listed no work items. "
+                "Put the chosen existing work item ids into the action's "
+                "target_item_ids field."
             )
     return None
 
@@ -127,7 +143,7 @@ class RuntimePlanningAgent:
                     if attempt >= PLAN_GENERATION_ATTEMPTS:
                         raise
                     continue
-                plan = materialize_work_item_tree_actions(plan)
+                plan = materialize_typed_action_inputs(plan)
                 defect = _plan_defect(plan)
                 if defect is not None:
                     self._retry_feedback = defect

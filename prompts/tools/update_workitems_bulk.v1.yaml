@@ -1,0 +1,33 @@
+kind: tool
+id: update_workitems_bulk
+version: 1.0.0
+name: Update Work Items Bulk
+description: >
+  Applies field-level changes to many existing work items in one action. This is
+  the preferred tool for backlog refinement and sprint preparation because it
+  commits every adjustment at once instead of one item per action.
+usage:
+  - Use when refining the backlog or preparing a sprint requires changing more than one existing work item.
+  - Put the changes into the action-level work_item_updates field (NOT inside input); each entry carries item_id plus only the fields that should change. An action with empty work_item_updates is invalid and does nothing.
+  - Use itemId values exactly as they appear in hydrated context (backlog_work_items or project_work_items); never invent ids.
+  - Only unstarted (todo) items are editable. Allowed changes are priority, due date, labels, filling an effectively empty description, and assigning a currently unassigned item; anything else is dropped by policy and should go into a suggestion instead.
+  - Change only fields you can justify from hydrated context or computed signals; leave everything else untouched to avoid churn.
+do_not_use:
+  - Do not use to create new work items; use create_workitem_tree instead.
+  - Do not target items whose status is in_progress, in_review, done, or archived; someone is already working on them or they are finished.
+  - Do not change titles or statuses, reassign items that already have assignees, or rewrite descriptions that already have real content.
+  - Do not include fields outside this tool's input contract.
+risk_level: high
+approval_policy: auto_commit
+input_contract:
+  projectId: string
+  updates: required non-empty array of update objects
+  updates[] entry:
+    itemId: uuid of an existing work item, required
+    title: optional string
+    description: optional string
+    priority: optional low | medium | high | urgent
+    status: optional todo | in_progress | in_review | done | archived
+    dueDate: optional date
+    assigneeUsernames: optional unique username list
+    labelNames: optional unique label list

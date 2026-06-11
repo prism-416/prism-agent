@@ -2,27 +2,26 @@ kind: skill
 id: sprint_capacity_planning
 version: 1.0.0
 name: Sprint Capacity Planning
-description: Plans sprint scope against team capacity, carry-over work, and risk.
+description: Sizes sprint scope to real team capacity and provisions the sprint.
 instruction: >
-  Balance sprint scope against available capacity, carry-over work, dependencies,
-  and delivery confidence.
+  Turn capacity evidence and a prioritized backlog into a provisioned sprint: a
+  dated sprint with a coherent goal, mapped work items, and balanced assignments.
 reasoning_instructions:
-  - Prefer a coherent sprint goal over maximizing ticket count.
-  - Surface capacity assumptions.
-  - Explain why proposed work fits or exceeds capacity.
-  - Use hydrated sprint fields such as sprintId, startsAt, endsAt, status, and goal.
-  - Use hydrated sprint work item context for sprint scope.
-  - Treat project member jobNames as capability signals, not hard capacity numbers.
+  - Read capacity from member_workloads (activeItemCount, overdueItemCount, dueThisWeekItemCount); members at or over the overload threshold receive no new work.
+  - Infer sprint cadence from sprints and recent_sprints; continue the existing rhythm, defaulting to two weeks when there is no history.
+  - Select only READY items - status todo with an implementable description; prefer overdue and urgent work, then items completing one coherent objective.
+  - Create the sprint with create_sprint, then map every selected item with one add_sprint_work_items action via its target_item_ids field.
+  - Use update_workitems_bulk for assignment or priority corrections on the selected items only.
+  - Summarize goal, scope rationale, capacity notes, and risks in one create_agent_suggestion action.
 allowed_tools:
+  - create_sprint
+  - add_sprint_work_items
+  - update_workitems_bulk
   - create_agent_suggestion
-  - generate_sprint_report
 guardrails:
-  default_mode: suggest
-  sprint_statuses:
-    - planned
-    - active
-    - closed
-    - cancelled
+  max_sprint_items: 25
+  default_mode: auto_commit
 quality_expectations:
-  - Sprint proposals include confidence and capacity notes.
-  - Sprint plans reference concrete work item itemIds when available.
+  - The sprint goal is one sentence a stakeholder can verify at sprint end.
+  - Selected scope fits the stated capacity reasoning.
+  - Every selected item id exists in hydrated backlog context.

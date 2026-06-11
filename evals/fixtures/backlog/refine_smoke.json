@@ -1,0 +1,32 @@
+{
+  "name": "refine_smoke",
+  "payload": {
+    "projectMembers": [
+      {"userId": "u-alice", "username": "alice", "fullName": "Alice Kim", "role": "member", "jobNames": ["Backend Engineer"]},
+      {"userId": "u-bob", "username": "bob", "fullName": "Bob Lee", "role": "member", "jobNames": ["Frontend Engineer"]},
+      {"userId": "u-carol", "username": "carol", "fullName": "Carol Park", "role": "member", "jobNames": ["QA Engineer"]}
+    ],
+    "memberWorkloads": [
+      {"userId": "u-alice", "username": "alice", "role": "member", "jobNames": ["Backend Engineer"], "activeItemCount": 9, "overdueItemCount": 2, "dueThisWeekItemCount": 3},
+      {"userId": "u-bob", "username": "bob", "role": "member", "jobNames": ["Frontend Engineer"], "activeItemCount": 1, "overdueItemCount": 0, "dueThisWeekItemCount": 0},
+      {"userId": "u-carol", "username": "carol", "role": "member", "jobNames": ["QA Engineer"], "activeItemCount": 2, "overdueItemCount": 0, "dueThisWeekItemCount": 1}
+    ],
+    "backlogWorkItems": [
+      {"itemId": "11111111-1111-4111-8111-111111111111", "title": "Implement GET /workspaces/:id/notifications route", "status": "todo", "priority": "low", "dueDate": "2026-05-20", "statusChangedAt": "2026-04-20T00:00:00Z", "description": "List notifications for the requesting member with unread filtering, cursor pagination, and workspace permission checks.", "assigneeUsernames": ["alice"]},
+      {"itemId": "22222222-2222-4222-8222-222222222222", "title": "Fix websocket disconnect on workspace switch", "status": "todo", "priority": "urgent", "statusChangedAt": "2026-06-09T00:00:00Z", "description": "Switching workspaces drops the realtime socket and the client never resubscribes, so live updates silently stop until refresh. Reproduce by switching twice within five seconds."},
+      {"itemId": "33333333-3333-4333-8333-333333333333", "title": "Improve board", "status": "todo", "priority": "medium", "statusChangedAt": "2026-06-08T00:00:00Z", "description": "make better"},
+      {"itemId": "44444444-4444-4444-8444-444444444444", "title": "Add saved view switcher dropdown", "status": "in_progress", "priority": "medium", "statusChangedAt": "2026-06-10T00:00:00Z", "description": "Dropdown listing personal and shared saved views in separate sections, calling the saved view list route and applying the selected view to the board.", "assigneeUsernames": ["bob"]},
+      {"itemId": "55555555-5555-4555-8555-555555555555", "title": "Ship notification schema migration", "status": "done", "statusChangedAt": "2026-06-01T00:00:00Z", "description": "Schema migration for notification storage, already deployed."}
+    ]
+  },
+  "expectations": {
+    "max_actions": 2,
+    "max_updates": 30,
+    "must_not_touch": ["55555555-5555-4555-8555-555555555555"],
+    "signal_item_ids": [
+      "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222",
+      "33333333-3333-4333-8333-333333333333"
+    ]
+  }
+}

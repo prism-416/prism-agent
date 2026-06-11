@@ -6,6 +6,7 @@ from urllib.error import HTTPError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
+from domain.backlog import compute_backlog_signals
 from domain.events import BaseRuntimeEvent
 
 
@@ -83,6 +84,16 @@ class PrismApiClient:
             if context_key == "project_work_items":
                 entities[context_key] = self._project_work_items_context(event, explicit_value)
                 continue
+            if context_key == "backlog_work_items":
+                entities[context_key] = self._backlog_work_items_context(event, explicit_value)
+                continue
+            if context_key in {"sprints", "recent_sprints"}:
+                entities[context_key] = self._sprints_context(event, explicit_value)
+                continue
+            if context_key == "backlog_signals":
+                # Computed after the loop so it can see backlog_work_items and
+                # member_workloads regardless of declaration order.
+                continue
             if context_key == "pull_request_diff":
                 entities[context_key] = self._pull_request_diff_context(event, explicit_value)
                 continue
@@ -90,6 +101,16 @@ class PrismApiClient:
                 explicit_value
                 if explicit_value is not None
                 else self._default_entity(context_key, event)
+            )
+        if "backlog_signals" in required_context:
+            explicit_signals = _payload_context_value(payload, "backlog_signals")
+            entities["backlog_signals"] = (
+                explicit_signals
+                if isinstance(explicit_signals, dict)
+                else compute_backlog_signals(
+                    _extract_items(entities.get("backlog_work_items")),
+                    _extract_items(entities.get("member_workloads")),
+                )
             )
         return entities
 
@@ -200,6 +221,26 @@ class PrismApiClient:
                 "offset": 0,
             }
         return {"items": [], "total": 0, "limit": 0, "offset": 0}
+
+    def get_workspace_sprints(self, workspace_id: str) -> list[dict[str, Any]]:
+        data = self._request_json(
+            "GET",
+            f"/workspaces/{quote(workspace_id, safe='')}/sprints/internal",
+        )
+        return _extract_items(data)
+
+    def add_sprint_work_items(
+        self,
+        workspace_id: str,
+        sprint_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        return self._request_json(
+            "POST",
+            f"/workspaces/{quote(workspace_id, safe='')}/sprints/internal/"
+            f"{quote(sprint_id, safe='')}/work-items",
+            payload,
+        )
 
     def find_similar_work_items(
         self,
@@ -492,6 +533,53 @@ class PrismApiClient:
             return []
         return [_slim_work_item(item) for item in items if isinstance(item, dict)]
 
+    def _backlog_work_items_context(
+        self,
+        event: BaseRuntimeEvent,
+        explicit_value: Any,
+    ) -> list[dict[str, Any]]:
+        """Open work items with the fields refinement signals need.
+
+        Unlike the slim project_work_items view, refinement needs dates and a
+        description excerpt to judge staleness and ambiguity; descriptions are
+        truncated so a large backlog stays prompt-sized.
+        """
+        explicit_items = _extract_items(explicit_value)
+        if explicit_items or not self.is_configured or not event.project_id:
+            return explicit_items
+        items: list[dict[str, Any]] = []
+        for status in ("todo", "in_progress", "in_review"):
+            if len(items) >= PROJECT_WORK_ITEMS_CONTEXT_LIMIT:
+                break
+            try:
+                result = self.search_work_items(
+                    event.project_id,
+                    {
+                        "status": status,
+                        "limit": PROJECT_WORK_ITEMS_CONTEXT_LIMIT - len(items),
+                    },
+                )
+            except RuntimeError:
+                continue
+            fetched = result.get("items")
+            if isinstance(fetched, list):
+                items.extend(_backlog_work_item(item) for item in fetched if isinstance(item, dict))
+        return items
+
+    def _sprints_context(
+        self,
+        event: BaseRuntimeEvent,
+        explicit_value: Any,
+    ) -> list[dict[str, Any]]:
+        explicit_items = _extract_items(explicit_value)
+        if explicit_items or not self.is_configured:
+            return explicit_items
+        try:
+            sprints = self.get_workspace_sprints(event.workspace_id)
+        except RuntimeError:
+            return []
+        return [_slim_sprint(sprint) for sprint in sprints[:SPRINTS_CONTEXT_LIMIT]]
+
     def _member_workloads_context(
         self,
         workspace_id: str,
@@ -577,6 +665,8 @@ def _pull_request_number(payload: dict[str, Any]) -> str | int | None:
 
 
 PROJECT_WORK_ITEMS_CONTEXT_LIMIT = 100
+SPRINTS_CONTEXT_LIMIT = 10
+BACKLOG_DESCRIPTION_EXCERPT_LENGTH = 240
 _WORK_ITEM_CONTEXT_FIELDS = (
     "itemId",
     "parentId",
@@ -589,9 +679,29 @@ _WORK_ITEM_CONTEXT_FIELDS = (
 )
 
 
+_BACKLOG_EXTRA_FIELDS = ("statusChangedAt", "createdAt")
+_SPRINT_CONTEXT_FIELDS = ("sprintId", "name", "goal", "status", "startsAt", "endsAt")
+
+
 def _slim_work_item(item: dict[str, Any]) -> dict[str, Any]:
     return {
         field: item[field] for field in _WORK_ITEM_CONTEXT_FIELDS if item.get(field) is not None
+    }
+
+
+def _backlog_work_item(item: dict[str, Any]) -> dict[str, Any]:
+    slim = _slim_work_item(item)
+    for field in _BACKLOG_EXTRA_FIELDS:
+        if item.get(field) is not None:
+            slim[field] = str(item[field])
+    description = str(item.get("description") or "").strip()
+    slim["description"] = description[:BACKLOG_DESCRIPTION_EXCERPT_LENGTH]
+    return slim
+
+
+def _slim_sprint(sprint: dict[str, Any]) -> dict[str, Any]:
+    return {
+        field: sprint[field] for field in _SPRINT_CONTEXT_FIELDS if sprint.get(field) is not None
     }
 
 

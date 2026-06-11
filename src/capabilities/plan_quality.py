@@ -5,7 +5,9 @@ from typing import Any
 
 from capabilities.tools.workitem_tools import (
     CreateWorkItemTreeTool,
+    UpdateWorkItemsBulkTool,
     coerce_work_item_tree_items,
+    coerce_work_item_updates,
 )
 from domain.plans import AgentPlan
 
@@ -15,8 +17,14 @@ ASSIGNMENT_CONCENTRATION_THRESHOLD = 0.6
 MIN_ASSIGNED_LEAVES_FOR_BALANCE_CHECK = 6
 
 _BOILERPLATE_HEADINGS = ("acceptance criteria", "context:")
-_EXISTING_WORK_ENTITY_KEYS = ("project_work_items", "sibling_work_items", "child_work_items")
+_EXISTING_WORK_ENTITY_KEYS = (
+    "project_work_items",
+    "backlog_work_items",
+    "sibling_work_items",
+    "child_work_items",
+)
 _MEMBER_ENTITY_KEYS = ("project_members", "workspace_members", "member_workloads")
+_CLOSED_STATUSES = {"done", "archived"}
 
 
 def plan_quality_issues(plan: AgentPlan, entities: dict[str, Any]) -> list[str]:
@@ -28,16 +36,86 @@ def plan_quality_issues(plan: AgentPlan, entities: dict[str, Any]) -> list[str]:
     """
     issues: list[str] = []
     for action in plan.actions:
-        if action.tool_name != CreateWorkItemTreeTool.name:
+        if action.tool_name == CreateWorkItemTreeTool.name:
+            items = coerce_work_item_tree_items(action.input)
+            if not items:
+                continue
+            nodes = _flatten(items)
+            issues.extend(_duplicate_title_issues(nodes))
+            issues.extend(_existing_duplicate_issues(nodes, entities))
+            issues.extend(_description_issues(nodes))
+            issues.extend(_assignment_issues(nodes, entities))
+        elif action.tool_name == UpdateWorkItemsBulkTool.name:
+            updates = coerce_work_item_updates(action.input) or []
+            issues.extend(
+                _target_item_issues(
+                    [str(update.get("itemId") or "") for update in updates],
+                    entities,
+                    action.tool_name,
+                    require_unstarted=True,
+                )
+            )
+        elif action.tool_name == "add_sprint_work_items":
+            raw_ids = action.input.get("itemIds")
+            if isinstance(raw_ids, list):
+                issues.extend(
+                    _target_item_issues(
+                        [str(item_id) for item_id in raw_ids],
+                        entities,
+                        action.tool_name,
+                    )
+                )
+    return issues
+
+
+def _known_item_index(entities: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    index: dict[str, dict[str, Any]] = {}
+    for key in _EXISTING_WORK_ENTITY_KEYS:
+        value = entities.get(key)
+        if not isinstance(value, list):
             continue
-        items = coerce_work_item_tree_items(action.input)
-        if not items:
-            continue
-        nodes = _flatten(items)
-        issues.extend(_duplicate_title_issues(nodes))
-        issues.extend(_existing_duplicate_issues(nodes, entities))
-        issues.extend(_description_issues(nodes))
-        issues.extend(_assignment_issues(nodes, entities))
+        for item in value:
+            if isinstance(item, dict) and item.get("itemId"):
+                index.setdefault(str(item["itemId"]), item)
+    return index
+
+
+def _target_item_issues(
+    item_ids: list[str],
+    entities: dict[str, Any],
+    tool_name: str,
+    *,
+    require_unstarted: bool = False,
+) -> list[str]:
+    known = _known_item_index(entities)
+    if not known:
+        return []
+    issues: list[str] = []
+    unknown = [item_id for item_id in item_ids if item_id and item_id not in known]
+    if unknown:
+        issues.append(
+            f"The {tool_name} action references item ids that do not exist in the "
+            f"hydrated backlog: {_quote_titles(unknown)}. Use itemId values exactly "
+            "as they appear in context."
+        )
+    blocked_statuses = (
+        {"in_progress", "in_review", *_CLOSED_STATUSES} if require_unstarted else _CLOSED_STATUSES
+    )
+    blocked = [
+        str(known[item_id].get("title") or item_id)
+        for item_id in item_ids
+        if item_id in known and str(known[item_id].get("status") or "") in blocked_statuses
+    ]
+    if blocked:
+        scope = (
+            "already started or closed; only unstarted (todo) items can be edited — "
+            "propose the rest in a suggestion"
+            if require_unstarted
+            else "already done or archived; leave closed items alone"
+        )
+        issues.append(
+            f"The {tool_name} action touches items that are {scope}: {_quote_titles(blocked)}."
+        )
     return issues
 
 
