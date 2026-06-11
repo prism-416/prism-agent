@@ -153,8 +153,17 @@ class PrismApiClient:
         project_id: str | None,
         entity_refs: list[str],
     ) -> dict[str, str | int]:
+        # Versions are tracked per-process; refs never observed in this process
+        # are omitted rather than reported with a sentinel, because "unobserved"
+        # is not evidence the entity changed. Actions usually execute in a later
+        # invocation than the one that planned them, so a sentinel here would
+        # mark every cross-invocation action stale and replan it forever.
         _ = (workspace_id, project_id)
-        return {entity_ref: self._versions.get(entity_ref, "missing") for entity_ref in entity_refs}
+        return {
+            entity_ref: self._versions[entity_ref]
+            for entity_ref in entity_refs
+            if entity_ref in self._versions
+        }
 
     def set_entity_version(self, entity_ref: str, version: str | int) -> None:
         self._versions[entity_ref] = version

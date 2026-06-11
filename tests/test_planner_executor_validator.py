@@ -500,3 +500,36 @@ def test_validator_detects_stale_context() -> None:
 
     assert validation.decision == ValidationDecision.REPLAN
     assert validation.stale_entities["story:s1"]["current"] == 2
+
+
+def test_validator_commits_when_current_versions_are_unobserved() -> None:
+    # Actions usually execute in a later invocation whose client never observed
+    # any entity versions; that must validate as fresh, not stale.
+    prism_client = PrismApiClient()
+    event = DomainEvent(
+        event_type="story.created",
+        workspace_id="w1",
+        project_id="p1",
+        payload={"entity_versions": {"story:s1": 1}},
+    )
+    context = (
+        ContextProvider(PrismApiClient(), PromptRegistry())
+        .hydrate(
+            EventEnvelope.wrap(event),
+            WorkflowRegistry.with_defaults().get("story.decompose"),
+        )
+        .context
+    )
+    action = PlannedAction(
+        plan_id="plan-1",
+        action_type="mutation",
+        tool_name="create_workitem",
+        instruction="Create a task.",
+        input={},
+        idempotency_key="k1",
+        expected_entity_versions={"story:s1": 1},
+    )
+
+    validation = Validator(prism_client).validate_before_execution(action, context)
+
+    assert validation.decision == ValidationDecision.COMMIT
