@@ -196,7 +196,7 @@ class CreateWorkItemTreeTool(BaseAgentTool):
                 start_index=len(created),
             )
             next_pending: list[tuple[dict[str, Any], str | None, int]] = []
-            for (node, parent_id, depth), item_id in zip(pending, item_ids):
+            for (node, parent_id, depth), item_id in zip(pending, item_ids, strict=True):
                 created.append(
                     {
                         "itemId": item_id,
