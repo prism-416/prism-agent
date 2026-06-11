@@ -75,6 +75,49 @@ def test_action_api_id_is_scoped_to_plan_id() -> None:
     assert action_api_id(first) != action_api_id(next_run)
 
 
+def test_agent_run_sync_preserves_long_step_titles_past_100_characters() -> None:
+    prism_client = _CapturingPrismClient()
+    sync = AgentRunSync(prism_client, enabled=True)
+    instruction = (
+        "Create a detailed implementation plan for notification settings, "
+        "activity feed filtering, read state synchronization, and audit history."
+    )
+    action = PlannedAction(
+        action_id="create-workitem-action",
+        plan_id="run-1",
+        action_type="mutation",
+        tool_name="create_workitem",
+        instruction=instruction,
+        input={},
+        idempotency_key="k1",
+    )
+    plan = AgentPlan(
+        plan_id="run-1",
+        source_event_id="event-1",
+        workspace_id="w1",
+        project_id="p1",
+        goal="Provision feature",
+        prompt_id="feature.provision",
+        prompt_version="1.0.0",
+        context_snapshot_ref="ctx-1",
+        actions=[action],
+    )
+
+    sync.record_action_state(
+        plan.replace_action(action.with_status(ActionStatus.RUNNING)),
+        action.with_status(ActionStatus.RUNNING),
+        event_name="action.executing",
+    )
+
+    step_payload = next(
+        payload
+        for method, path, payload in prism_client.calls
+        if method == "POST" and path.endswith("/steps")
+    )
+    assert len(instruction) > 100
+    assert step_payload["title"] == instruction
+
+
 def test_agent_run_sync_upserts_plan_and_action_state() -> None:
     prism_client = _CapturingPrismClient()
     sync = AgentRunSync(prism_client, enabled=True)

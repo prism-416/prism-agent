@@ -20,6 +20,8 @@ from domain.context import AgentContext
 from domain.plans import AgentPlan
 from infrastructure.prism_api.client import PrismApiClient
 
+AGENT_RUN_STEP_TITLE_MAX_LENGTH = 255
+
 
 class AgentRunSync:
     def __init__(self, prism_client: PrismApiClient, *, enabled: bool) -> None:
@@ -58,7 +60,7 @@ class AgentRunSync:
                 "stepOrder": 0,
                 "stepType": "plan",
                 "status": "completed",
-                "title": (plan.goal.strip() or "Plan")[:100],
+                "title": (plan.goal.strip() or "Plan")[:AGENT_RUN_STEP_TITLE_MAX_LENGTH],
                 "outputSummary": f"Planned {len(plan.actions)} action(s).",
             },
         )
@@ -113,7 +115,7 @@ class AgentRunSync:
             "stepOrder": action_step_order(plan, action),
             "stepType": "execute",
             "status": step_status_to_api(action.status),
-            "title": action_step_title(action)[:100],
+            "title": action_step_title(action)[:AGENT_RUN_STEP_TITLE_MAX_LENGTH],
             "inputSummary": action.instruction[:5000],
             "outputSummary": (message or event_name)[:5000],
         }
