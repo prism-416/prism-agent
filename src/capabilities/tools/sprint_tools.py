@@ -36,6 +36,92 @@ class CreateSprintTool(BaseAgentTool):
         )
 
 
+class AddSprintWorkItemsTool(BaseAgentTool):
+    """Maps existing work items into a sprint in one action."""
+
+    name = "add_sprint_work_items"
+
+    def execute(self, action: PlannedAction, context: AgentContext) -> ToolResult:
+        workspace_id = str(action.input.get("workspaceId") or context.workspace_id)
+        sprint_id = str(action.input.get("sprintId") or "")
+        item_ids = _valid_item_ids(action.input.get("itemIds"))
+        if not item_ids:
+            return ToolResult(
+                plan_id=action.plan_id,
+                action_id=action.action_id,
+                tool_name=self.name,
+                success=False,
+                error=(
+                    "add_sprint_work_items requires a non-empty itemIds list of "
+                    "existing work item ids."
+                ),
+            )
+        if self.prism_client and self.prism_client.is_configured:
+            if not sprint_id:
+                # The sprint is usually created earlier in the same plan, so its id
+                # is unknown at planning time; resolve to the newest planned sprint.
+                sprint_id = _latest_planned_sprint_id(self.prism_client, workspace_id) or ""
+            if not sprint_id:
+                return ToolResult(
+                    plan_id=action.plan_id,
+                    action_id=action.action_id,
+                    tool_name=self.name,
+                    success=False,
+                    error="No sprintId given and no planned sprint exists to map items into.",
+                )
+            payload: dict = {"itemIds": item_ids}
+            requested_by_user_id = _requested_by_user_id(action.input, context)
+            if requested_by_user_id:
+                payload["requestedByUserId"] = requested_by_user_id
+            self.prism_client.add_sprint_work_items(workspace_id, sprint_id, payload)
+        elif not sprint_id:
+            sprint_id = f"local-sprint-{action.action_id}"
+        return ToolResult(
+            plan_id=action.plan_id,
+            action_id=action.action_id,
+            tool_name=self.name,
+            success=True,
+            output={
+                "sprintId": sprint_id,
+                "itemIds": item_ids,
+                "addedCount": len(item_ids),
+            },
+        )
+
+
+def _latest_planned_sprint_id(prism_client, workspace_id: str) -> str | None:
+    try:
+        sprints = prism_client.get_workspace_sprints(workspace_id)
+    except RuntimeError:
+        return None
+    planned = [
+        sprint
+        for sprint in sprints
+        if isinstance(sprint, dict) and str(sprint.get("status") or "") == "planned"
+    ]
+    if not planned:
+        return None
+    planned.sort(key=lambda sprint: str(sprint.get("createdAt") or ""), reverse=True)
+    sprint_id = planned[0].get("sprintId")
+    return str(sprint_id) if sprint_id else None
+
+
+def _valid_item_ids(raw: object) -> list[str]:
+    from uuid import UUID
+
+    if not isinstance(raw, list):
+        return []
+    valid: list[str] = []
+    for value in raw:
+        try:
+            item_id = str(UUID(str(value)))
+        except ValueError:
+            continue
+        if item_id not in valid:
+            valid.append(item_id)
+    return valid
+
+
 class GenerateSprintReportTool(BaseAgentTool):
     name = "generate_sprint_report"
 

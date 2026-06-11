@@ -7,7 +7,11 @@ from capabilities.tools.github_tools import (
     LinkPullRequestTool,
     SubmitPullRequestReviewTool,
 )
-from capabilities.tools.sprint_tools import CreateSprintTool, GenerateSprintReportTool
+from capabilities.tools.sprint_tools import (
+    AddSprintWorkItemsTool,
+    CreateSprintTool,
+    GenerateSprintReportTool,
+)
 from capabilities.tools.suggestion_tools import CreateAgentSuggestionTool
 from capabilities.tools.workitem_tools import (
     AddWorkItemCommentTool,
@@ -15,6 +19,7 @@ from capabilities.tools.workitem_tools import (
     CreateWorkItemTool,
     CreateWorkItemTreeTool,
     FindDuplicateWorkItemsTool,
+    UpdateWorkItemsBulkTool,
     UpdateWorkItemStatusTool,
     UpdateWorkItemTool,
 )
@@ -28,9 +33,11 @@ class ToolRegistry:
         CreateAgentSuggestionTool.name: CreateAgentSuggestionTool,
         FindDuplicateWorkItemsTool.name: FindDuplicateWorkItemsTool,
         CreateSprintTool.name: CreateSprintTool,
+        AddSprintWorkItemsTool.name: AddSprintWorkItemsTool,
         CreateWorkItemTool.name: CreateWorkItemTool,
         CreateWorkItemTreeTool.name: CreateWorkItemTreeTool,
         UpdateWorkItemTool.name: UpdateWorkItemTool,
+        UpdateWorkItemsBulkTool.name: UpdateWorkItemsBulkTool,
         AssignWorkItemTool.name: AssignWorkItemTool,
         UpdateWorkItemStatusTool.name: UpdateWorkItemStatusTool,
         AddWorkItemCommentTool.name: AddWorkItemCommentTool,

@@ -6,7 +6,7 @@ from typing import Any
 from uuid import UUID
 
 from capabilities.tools.base import BaseAgentTool
-from domain.actions import PlannedAction, WorkItemLeafDraft
+from domain.actions import PlannedAction, WorkItemLeafDraft, WorkItemUpdateDraft
 from domain.context import AgentContext
 from domain.plans import AgentPlan
 from domain.results import ToolResult
@@ -282,6 +282,199 @@ class UpdateWorkItemTool(BaseAgentTool):
         )
 
 
+MAX_BULK_UPDATES = 50
+_BULK_UPDATE_FIELDS = {
+    "title",
+    "description",
+    "priority",
+    "status",
+    "dueDate",
+    "assigneeUsernames",
+    "labelNames",
+}
+
+
+MUTABLE_UPDATE_STATUSES = {"todo"}
+PROTECTED_UPDATE_FIELDS = {"title", "status"}
+_CONTEXT_ITEM_KEYS = (
+    "backlog_work_items",
+    "project_work_items",
+    "sibling_work_items",
+    "child_work_items",
+)
+
+
+class UpdateWorkItemsBulkTool(BaseAgentTool):
+    """Applies safe field-level updates to many existing work items in one action.
+
+    Existing items may already be in a human's hands, so mutation is policy-gated
+    in code, not just in the prompt: only unstarted (todo) items present in the
+    hydrated context are touched; titles and statuses never change; descriptions
+    are only filled when effectively empty; assignees are only added to
+    unassigned items. Everything blocked is reported in ``skipped`` so the
+    planner can surface it as a suggestion instead.
+    """
+
+    name = "update_workitems_bulk"
+
+    def execute(self, action: PlannedAction, context: AgentContext) -> ToolResult:
+        project_id = str(action.input.get("projectId") or context.project_id or "")
+        updates = coerce_work_item_updates(action.input)
+        error = validate_work_item_updates(updates)
+        if error:
+            return ToolResult(
+                plan_id=action.plan_id,
+                action_id=action.action_id,
+                tool_name=self.name,
+                success=False,
+                error=error,
+            )
+
+        requested_by_user_id = _requested_by_user_id(action.input, context)
+        known_usernames = _known_member_usernames(context)
+        item_index = _context_item_index(context)
+        applied: list[dict[str, Any]] = []
+        skipped: list[dict[str, Any]] = []
+        for update in updates:
+            item_id = _valid_uuid_or_none(update.get("itemId"))
+            if item_id is None:
+                skipped.append({"itemId": update.get("itemId"), "reason": "invalid_item_id"})
+                continue
+            current = item_index.get(item_id)
+            if current is None:
+                skipped.append({"itemId": item_id, "reason": "not_in_hydrated_context"})
+                continue
+            if str(current.get("status") or "") not in MUTABLE_UPDATE_STATUSES:
+                skipped.append({"itemId": item_id, "reason": "item_started_or_closed"})
+                continue
+            payload = _filter_payload(update, _BULK_UPDATE_FIELDS)
+            dropped = _drop_protected_fields(payload, current)
+            _normalize_node_payload(payload, known_usernames)
+            if not payload:
+                skipped.append(
+                    {"itemId": item_id, "reason": "no_safe_fields", "droppedFields": dropped}
+                )
+                continue
+            if self.prism_client and self.prism_client.is_configured:
+                if requested_by_user_id:
+                    payload.setdefault("requestedByUserId", requested_by_user_id)
+                self.prism_client.update_work_item(project_id, item_id, payload)
+            entry: dict[str, Any] = {"itemId": item_id, **payload}
+            if dropped:
+                entry["droppedFields"] = dropped
+            applied.append(entry)
+
+        return ToolResult(
+            plan_id=action.plan_id,
+            action_id=action.action_id,
+            tool_name=self.name,
+            success=True,
+            output={
+                "projectId": project_id,
+                "updatedCount": len(applied),
+                "updates": applied,
+                "skipped": skipped,
+            },
+        )
+
+
+def _context_item_index(context: AgentContext) -> dict[str, dict[str, Any]]:
+    index: dict[str, dict[str, Any]] = {}
+    for key in _CONTEXT_ITEM_KEYS:
+        value = context.entities.get(key)
+        if not isinstance(value, list):
+            continue
+        for item in value:
+            if isinstance(item, dict) and item.get("itemId"):
+                index.setdefault(str(item["itemId"]), item)
+    return index
+
+
+def _drop_protected_fields(payload: dict[str, Any], current: dict[str, Any]) -> list[str]:
+    """Strip changes that would clobber human work; return what was dropped.
+
+    Titles are an item's identity and statuses are the owner's workflow state, so
+    neither is ever bulk-edited. A real description is the author's content —
+    only effectively-empty descriptions may be filled in. Assignees are only
+    added where nobody owns the item yet.
+    """
+    dropped = [field for field in PROTECTED_UPDATE_FIELDS if payload.pop(field, None) is not None]
+    if "description" in payload and len(str(current.get("description") or "").strip()) >= 30:
+        payload.pop("description")
+        dropped.append("description")
+    if "assigneeUsernames" in payload and current.get("assigneeUsernames"):
+        payload.pop("assigneeUsernames")
+        dropped.append("assigneeUsernames")
+    return dropped
+
+
+def coerce_work_item_updates(input_data: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """Best-effort extraction of the update list from a planned action input."""
+    for key in ("updates", "workItemUpdates", "work_item_updates", "items", "changes"):
+        value = input_data.get(key)
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except ValueError:
+                continue
+        if isinstance(value, dict):
+            value = [value]
+        if isinstance(value, list) and value:
+            return [item for item in value if isinstance(item, dict)] or None
+    if str(input_data.get("itemId") or "").strip():
+        return [
+            {
+                field: value
+                for field, value in input_data.items()
+                if field not in _TREE_ROOT_ONLY_FIELDS
+            }
+        ]
+    return None
+
+
+def validate_work_item_updates(updates: Any) -> str | None:
+    if not isinstance(updates, list) or not updates:
+        return "update_workitems_bulk requires a non-empty 'updates' list."
+    if len(updates) > MAX_BULK_UPDATES:
+        return f"Bulk update exceeds max size of {MAX_BULK_UPDATES} items."
+    for update in updates:
+        if not isinstance(update, dict):
+            return "Every update entry must be an object."
+        if not str(update.get("itemId") or "").strip():
+            return "Every update entry requires an itemId."
+        if not any(field in update for field in _BULK_UPDATE_FIELDS):
+            return (
+                "Every update entry needs at least one field to change "
+                "(title, description, priority, status, dueDate, "
+                "assigneeUsernames, labelNames)."
+            )
+    return None
+
+
+def work_item_update_drafts_to_updates(
+    drafts: list[WorkItemUpdateDraft],
+) -> list[dict[str, Any]]:
+    updates: list[dict[str, Any]] = []
+    for draft in drafts:
+        update: dict[str, Any] = {"itemId": draft.item_id}
+        for field, key in (
+            ("title", "title"),
+            ("description", "description"),
+            ("priority", "priority"),
+            ("status", "status"),
+            ("due_date", "dueDate"),
+        ):
+            value = getattr(draft, field)
+            if value is not None:
+                update[key] = value
+        if draft.assignee_usernames:
+            update["assigneeUsernames"] = list(draft.assignee_usernames)
+        if draft.label_names:
+            update["labelNames"] = list(draft.label_names)
+        updates.append(update)
+    return updates
+
+
 class AssignWorkItemTool(BaseAgentTool):
     name = "assign_workitem"
 
@@ -388,29 +581,46 @@ def _draft_to_node(draft: WorkItemLeafDraft) -> dict[str, Any]:
     return node
 
 
-def materialize_work_item_tree_actions(plan: AgentPlan) -> AgentPlan:
-    """Fill input.items for create_workitem_tree actions from typed work_items drafts.
+def materialize_typed_action_inputs(plan: AgentPlan) -> AgentPlan:
+    """Fill untyped tool inputs from the typed PlannedAction fields.
 
-    Structured output cannot populate the untyped action input, so the planner puts
-    the breakdown in ``PlannedAction.work_items``; this turns it into the tool's
-    input contract right after plan generation. An input that already carries a
-    coercible items list wins, so explicitly planned inputs are never overwritten.
+    Structured output cannot populate the untyped action input, so payloads
+    travel in typed fields (``work_items``, ``work_item_updates``,
+    ``target_item_ids``) and are turned into each tool's input contract right
+    after plan generation. An input that already carries a coercible payload
+    wins, so explicitly planned inputs are never overwritten.
     """
     updated_plan = plan
     for action in plan.actions:
-        if action.tool_name != CreateWorkItemTreeTool.name:
-            continue
-        if not action.work_items:
-            continue
-        if coerce_work_item_tree_items(action.input):
-            continue
-        updated_input = {
-            **action.input,
-            "items": work_item_drafts_to_items(action.work_items),
-        }
-        updated_plan = updated_plan.replace_action(
-            action.model_copy(update={"input": updated_input})
-        )
+        updated_input: dict[str, Any] | None = None
+        if (
+            action.tool_name == CreateWorkItemTreeTool.name
+            and action.work_items
+            and not coerce_work_item_tree_items(action.input)
+        ):
+            updated_input = {
+                **action.input,
+                "items": work_item_drafts_to_items(action.work_items),
+            }
+        elif (
+            action.tool_name == UpdateWorkItemsBulkTool.name
+            and action.work_item_updates
+            and not coerce_work_item_updates(action.input)
+        ):
+            updated_input = {
+                **action.input,
+                "updates": work_item_update_drafts_to_updates(action.work_item_updates),
+            }
+        elif (
+            action.tool_name == "add_sprint_work_items"
+            and action.target_item_ids
+            and not action.input.get("itemIds")
+        ):
+            updated_input = {**action.input, "itemIds": list(action.target_item_ids)}
+        if updated_input is not None:
+            updated_plan = updated_plan.replace_action(
+                action.model_copy(update={"input": updated_input})
+            )
     return updated_plan
 
 

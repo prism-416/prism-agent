@@ -4,7 +4,7 @@ import json
 from typing import Any
 
 from application.context_provider import ContextProvider
-from capabilities.tools.workitem_tools import materialize_work_item_tree_actions
+from capabilities.tools.workitem_tools import materialize_typed_action_inputs
 from domain.actions import PlannedAction, WorkItemDraft
 from domain.context import AgentContext
 from domain.events import DomainEvent, EventEnvelope
@@ -360,7 +360,7 @@ def test_typed_work_items_materialize_into_tool_input() -> None:
     )
     plan = plan.model_copy(update={"actions": [tree_action, other_action]})
 
-    materialized = materialize_work_item_tree_actions(plan)
+    materialized = materialize_typed_action_inputs(plan)
 
     items = materialized.get_action(tree_action.action_id).input["items"]
     assert [item["title"] for item in items] == ["Build API", "Build UI"]
@@ -393,7 +393,7 @@ def test_materialize_keeps_explicit_input_items() -> None:
     )
     plan = plan.model_copy(update={"actions": [action]})
 
-    materialized = materialize_work_item_tree_actions(plan)
+    materialized = materialize_typed_action_inputs(plan)
 
     items = materialized.get_action(action.action_id).input["items"]
     assert [item["title"] for item in items] == ["Explicit"]

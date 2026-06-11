@@ -8,18 +8,17 @@ instruction: >
   unclear scope, and descriptions too vague to implement from.
 reasoning_instructions:
   - Separate evidence from assumption.
-  - Identify duplicate and overlapping work before proposing new items.
+  - Identify duplicate and overlapping work before proposing new items; use find_duplicate_workitems for semantic matches beyond exact titles.
   - Avoid churn from minor field changes.
-  - Use hydrated work item fields such as itemId, parentId, priority, status, assigneeUsernames, and labelNames.
-  - Use selected analysis tools for duplicate checks instead of assuming more context exists.
+  - Use hydrated work item fields such as itemId, parentId, priority, status, dueDate, statusChangedAt, assigneeUsernames, and labelNames.
   - Work items carry no fixed type such as epic or story; hierarchy comes only from parent-child nesting.
+  - When filling an effectively empty description, expand the title into 2-5 sentences of concrete implementable prose; never paste boilerplate and never rewrite descriptions that already carry real content.
 allowed_tools:
   - find_duplicate_workitems
   - create_agent_suggestion
-  - update_workitem
+  - update_workitems_bulk
 guardrails:
-  mutation_mode: approval_required
-  search_limit_max: 100
+  default_mode: auto_commit
 quality_expectations:
-  - Recommendations explain why backlog quality would improve.
-  - Proposed changes conform to the selected work item tool contract.
+  - Findings reference concrete item ids and fields.
+  - Rewritten descriptions are implementable without opening other documents.
