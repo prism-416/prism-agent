@@ -6,11 +6,13 @@ from typing import Any
 
 import pytest
 
+from application.context_provider import ContextProvider
 from application.planner import Planner
 from capabilities.tools.github_tools import SubmitPullRequestReviewTool
 from domain.actions import PlannedAction
 from domain.context import AgentContext
 from domain.events import DomainEvent, EventEnvelope
+from infrastructure.object_storage.base import JsonPayloadStore
 from infrastructure.observability.logging_config import get_logger
 from infrastructure.prism_api.client import (
     PrismApiClient,
@@ -432,6 +434,115 @@ def test_diff_hydration_warns_when_fetch_skipped_for_missing_project(diff_log_ca
     assert record["skip_reason"] == "missing_project_id"
     assert record["has_usable_diff"] is False
     assert "guard" in record
+
+
+class _FakeDiffPayloadStore(JsonPayloadStore):
+    def __init__(self, blob: dict[str, Any] | None = None, *, raises: Exception | None = None):
+        self.blob = blob
+        self.raises = raises
+        self.calls: list[tuple[str, str | None]] = []
+
+    def fetch_json(self, object_name: str, version_id: str | None = None) -> dict[str, Any]:
+        self.calls.append((object_name, version_id))
+        if self.raises is not None:
+            raise self.raises
+        assert self.blob is not None
+        return self.blob
+
+
+def _pointer_event() -> DomainEvent:
+    return DomainEvent(
+        event_type="pr.review_requested",
+        workspace_id="workspace-1",
+        project_id="project-1",
+        correlation_id="run-1",
+        payload={
+            "runId": "run-1",
+            "pullNumber": 33,
+            "headSha": "fbd9682",
+            "repositoryFullName": "prism-416/prism-agent",
+            "diffObjectName": "workspaces/workspace-1/pull-request-reviews/run-1.json",
+            "diffObjectVersionId": "ver-1",
+        },
+    )
+
+
+_DIFF_BLOB = {
+    "schemaVersion": "1.0",
+    "runId": "run-1",
+    "workspaceId": "workspace-1",
+    "repositoryFullName": "prism-416/prism-agent",
+    "pullNumber": 33,
+    "headSha": "fbd9682",
+    "pullRequest": {
+        "pullNumber": 33,
+        "title": "Add diff fetch",
+        "state": "open",
+        "headSha": "fbd9682",
+        "baseSha": "e91d82f",
+        "author": "lighteko",
+        "body": "...",
+        "files": [
+            {
+                "filename": "src/app.py",
+                "status": "modified",
+                "additions": 1,
+                "deletions": 0,
+                "patch": "@@ -1 +1 @@\n-x\n+y",
+            }
+        ],
+        "commits": [{"sha": "fbd9682", "message": "Add diff fetch"}],
+        "truncated": False,
+    },
+}
+
+
+def test_context_provider_dereferences_diff_pointer_to_object_storage() -> None:
+    prompt_registry = PromptRegistry()
+    workflow = WorkflowRegistry.from_prompt_registry(prompt_registry).get("pr.review")
+    store = _FakeDiffPayloadStore(_DIFF_BLOB)
+    # Unconfigured Prism client: the diff must come from the dereferenced blob,
+    # not an API call.
+    provider = ContextProvider(PrismApiClient(), prompt_registry, store)
+
+    snapshot = provider.hydrate(EventEnvelope.wrap(_pointer_event()), workflow)
+
+    assert store.calls == [("workspaces/workspace-1/pull-request-reviews/run-1.json", "ver-1")]
+    diff = snapshot.context.entities["pull_request_diff"]
+    assert diff["pullNumber"] == 33
+    assert diff["headSha"] == "fbd9682"
+    assert diff["files"][0]["patch"].startswith("@@ -1 +1 @@")
+    # The same PR object also feeds the pull_request_event metadata entity.
+    assert (
+        snapshot.context.entities["pull_request_event"]["pullRequest"]["title"] == "Add diff fetch"
+    )
+
+
+def test_context_provider_degrades_when_diff_pointer_fetch_fails(diff_log_capture) -> None:
+    handler = diff_log_capture
+    prompt_registry = PromptRegistry()
+    workflow = WorkflowRegistry.from_prompt_registry(prompt_registry).get("pr.review")
+    store = _FakeDiffPayloadStore(raises=RuntimeError("object 404"))
+    provider = ContextProvider(PrismApiClient(), prompt_registry, store)
+
+    snapshot = provider.hydrate(EventEnvelope.wrap(_pointer_event()), workflow)
+
+    # No crash; the diff just stays unresolved (no inline value, unconfigured client).
+    assert snapshot.context.entities["pull_request_diff"] is None
+    pointer_logs = [
+        json.loads(r.getMessage())
+        for r in handler.records
+        if _is_json_log(r.getMessage(), "diff.pointer")
+    ]
+    assert pointer_logs and pointer_logs[-1]["resolved"] is False
+
+
+def _is_json_log(message: str, log_name: str) -> bool:
+    try:
+        payload = json.loads(message)
+    except (ValueError, TypeError):
+        return False
+    return isinstance(payload, dict) and payload.get("log") == log_name
 
 
 def test_pr_review_workflow_auto_commits_submit_review() -> None:

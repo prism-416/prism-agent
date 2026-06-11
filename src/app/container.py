@@ -20,6 +20,7 @@ from infrastructure.llm.gemini_embeddings import GeminiQueryEmbedder
 from infrastructure.llm.gemini_model_provider import GeminiModelProvider
 from infrastructure.llm.pydantic_ai_agent_factory import PydanticAIAgentFactory
 from infrastructure.object_storage.oci_agent_memory_store import ObjectStorageAgentMemoryStore
+from infrastructure.object_storage.oci_payload_store import ObjectStoragePayloadStore
 from infrastructure.observability.logging_config import configure_logging
 from infrastructure.prism_api.client import PrismApiClient
 from infrastructure.queue.base import Queue
@@ -79,7 +80,15 @@ def build_container(settings: Settings | None = None) -> AppContainer:
     executor = Executor(tool_registry)
     validator = Validator(prism_client)
     router = EventRouter(TriggerPolicy(), workflow_registry)
-    context_provider = ContextProvider(prism_client, prompt_registry)
+    diff_payload_store = (
+        ObjectStoragePayloadStore(
+            settings.object_storage_namespace,
+            settings.object_storage_bucket_name,
+        )
+        if settings.object_storage_namespace and settings.object_storage_bucket_name
+        else None
+    )
+    context_provider = ContextProvider(prism_client, prompt_registry, diff_payload_store)
     orchestrator = Orchestrator(skill_registry)
     subagent_runner = SubAgentRunner(planner)
     agent_run_sync = AgentRunSync(
