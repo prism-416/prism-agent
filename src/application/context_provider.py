@@ -134,5 +134,21 @@ class ContextProvider:
                 "files_count": len(files) if isinstance(files, list) else None,
             },
         )
-        merged_payload = {**payload, "pull_request_diff": pull_request, "pullRequest": pull_request}
+        # repositoryFullName lives at the blob top level, not inside pullRequest, but
+        # the review-submit API requires it. Fold it into the diff entity so the tool
+        # can read it from context at execution time (the source event payload is gone
+        # by then). pullRequest stays clean for the pull_request_event metadata entity.
+        repository_full_name = (
+            blob.get("repositoryFullName")
+            or payload.get("repositoryFullName")
+            or payload.get("repository_full_name")
+        )
+        pull_request_diff = dict(pull_request)
+        if repository_full_name and not pull_request_diff.get("repositoryFullName"):
+            pull_request_diff["repositoryFullName"] = repository_full_name
+        merged_payload = {
+            **payload,
+            "pull_request_diff": pull_request_diff,
+            "pullRequest": pull_request,
+        }
         return event.model_copy(update={"payload": merged_payload})
