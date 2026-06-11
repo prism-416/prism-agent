@@ -27,6 +27,11 @@ from infrastructure.queue.base import Queue
 from infrastructure.state.base import StateStore
 
 ACTION_EXECUTION_ATTEMPTS = 3
+# Consecutive auto-commit actions run inside the same invocation: every queue
+# round-trip costs seconds of dead time (connector delivery + cold state
+# restore), so a plan's action chain should cross the queue only when it must
+# (approval gates, budget exhaustion, failures).
+INLINE_ACTION_CHAIN_BUDGET = 8
 
 
 class ActionEventHandler:
@@ -43,6 +48,7 @@ class ActionEventHandler:
         self.state_store = state_store
         self.queue = queue
         self.agent_run_sync = agent_run_sync
+        self._inline_actions_used = 0
 
     def handle(self, envelope: EventEnvelope) -> None:
         event = envelope.event
@@ -468,6 +474,24 @@ class ActionEventHandler:
             correlation_id=envelope.event.correlation_id,
             causality=envelope.event.causality.child(envelope.event_id),
         )
+        if (
+            not next_action.requires_approval
+            and self._inline_actions_used < INLINE_ACTION_CHAIN_BUDGET
+        ):
+            self._inline_actions_used += 1
+            self._trace(
+                event,
+                "action.chained",
+                f"Continuing action {next_action.action_id} in the same invocation.",
+                plan.plan_id,
+                next_action.action_id,
+                action_trace_data(
+                    next_action,
+                    {"inline_chain_position": self._inline_actions_used},
+                ),
+            )
+            self.handle(EventEnvelope.wrap(event))
+            return
         self.queue.enqueue(EventEnvelope.wrap(event))
         self._trace(
             event,
