@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from application.agent_run_sync import AgentRunSync
 from application.subagent_runner import SubAgentRunner, sub_plan_id
+from domain.actions import PlannedAction
 from domain.events import (
     AgentActionEvent,
     EventEnvelope,
@@ -9,7 +10,7 @@ from domain.events import (
     SubAgentCompletedEvent,
     SubAgentTaskEvent,
 )
-from domain.plans import AgentPlan
+from domain.plans import AgentPlan, PlanStatus
 from domain.results import TraceEvent
 from domain.subtasks import SubAgentResult, SubTask, SubTaskStatus, TaskGraph
 from infrastructure.queue.base import Queue
@@ -71,6 +72,13 @@ class SubAgentCoordinator:
                 data={"node_id": node.node_id, "status": node.status.value},
             )
             return
+        existing_sub_plan = self.state_store.get_plan(
+            event.workspace_id, sub_plan_id(run_id, node.node_id)
+        )
+        if existing_sub_plan is not None:
+            self._resume_existing_subplan(envelope, graph, node, existing_sub_plan)
+            return
+
         snapshot = self.state_store.get_context_snapshot(
             event.workspace_id, graph.context_snapshot_ref or ""
         )
@@ -105,15 +113,7 @@ class SubAgentCoordinator:
             self._enqueue_completed(envelope, graph, node.node_id, "completed")
             return
 
-        action_event = AgentActionEvent(
-            workspace_id=sub_plan.workspace_id,
-            project_id=sub_plan.project_id,
-            plan_id=sub_plan.plan_id,
-            action_id=first_action.action_id,
-            correlation_id=envelope.event.correlation_id,
-            causality=envelope.event.causality.child(envelope.event_id),
-        )
-        self.queue.enqueue(EventEnvelope.wrap(action_event))
+        action_event = self._enqueue_action(envelope, sub_plan, first_action)
         self._trace(
             event,
             "subagent.started",
@@ -122,8 +122,107 @@ class SubAgentCoordinator:
                 "node_id": node.node_id,
                 "sub_plan_id": sub_plan.plan_id,
                 "first_action_id": first_action.action_id,
+                "action_event_id": action_event.event_id,
             },
         )
+
+    def _resume_existing_subplan(
+        self,
+        envelope: EventEnvelope,
+        graph: TaskGraph,
+        node: SubTask,
+        sub_plan: AgentPlan,
+    ) -> None:
+        event = envelope.event
+        next_action = sub_plan.next_pending_action()
+        if next_action is not None:
+            action_event = self._enqueue_action(envelope, sub_plan, next_action)
+            self._trace(
+                event,
+                "subagent.resumed",
+                f"Resumed subagent node {node.node_id} from existing sub-plan.",
+                data={
+                    "node_id": node.node_id,
+                    "sub_plan_id": sub_plan.plan_id,
+                    "next_action_id": next_action.action_id,
+                    "action_event_id": action_event.event_id,
+                },
+            )
+            return
+
+        if sub_plan.status in {PlanStatus.COMPLETED, PlanStatus.PLANNED}:
+            self._trace(
+                event,
+                "subagent.resumed",
+                f"Resumed completed subagent node {node.node_id} from existing sub-plan.",
+                data={
+                    "node_id": node.node_id,
+                    "sub_plan_id": sub_plan.plan_id,
+                    "plan_status": sub_plan.status.value,
+                },
+            )
+            self._enqueue_completed(envelope, graph, node.node_id, "completed")
+            return
+
+        if sub_plan.status == PlanStatus.WAITING_FOR_APPROVAL:
+            self._trace(
+                event,
+                "subagent.resumed",
+                f"Resumed waiting subagent node {node.node_id} from existing sub-plan.",
+                data={
+                    "node_id": node.node_id,
+                    "sub_plan_id": sub_plan.plan_id,
+                    "plan_status": sub_plan.status.value,
+                },
+            )
+            self._enqueue_completed(envelope, graph, node.node_id, "waiting_for_approval")
+            return
+
+        if sub_plan.status in {
+            PlanStatus.FAILED,
+            PlanStatus.CANCELLED,
+            PlanStatus.REPLAN_REQUIRED,
+        }:
+            self._trace(
+                event,
+                "subagent.resumed",
+                f"Resumed failed subagent node {node.node_id} from existing sub-plan.",
+                data={
+                    "node_id": node.node_id,
+                    "sub_plan_id": sub_plan.plan_id,
+                    "plan_status": sub_plan.status.value,
+                },
+            )
+            self._enqueue_completed(envelope, graph, node.node_id, "failed")
+            return
+
+        self._trace(
+            event,
+            "subagent.in_flight",
+            f"Subagent node {node.node_id} already has an in-flight sub-plan.",
+            data={
+                "node_id": node.node_id,
+                "sub_plan_id": sub_plan.plan_id,
+                "plan_status": sub_plan.status.value,
+            },
+        )
+
+    def _enqueue_action(
+        self,
+        envelope: EventEnvelope,
+        sub_plan: AgentPlan,
+        action: PlannedAction,
+    ) -> AgentActionEvent:
+        action_event = AgentActionEvent(
+            workspace_id=sub_plan.workspace_id,
+            project_id=sub_plan.project_id,
+            plan_id=sub_plan.plan_id,
+            action_id=action.action_id,
+            correlation_id=envelope.event.correlation_id,
+            causality=envelope.event.causality.child(envelope.event_id),
+        )
+        self.queue.enqueue(EventEnvelope.wrap(action_event))
+        return action_event
 
     # -- completion / join -------------------------------------------------
 

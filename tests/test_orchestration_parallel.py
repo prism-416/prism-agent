@@ -3,9 +3,17 @@ from __future__ import annotations
 from app.container import build_container
 from application.agent_run_sync import AgentRunSync
 from application.subagent_coordinator import SubAgentCoordinator
-from application.subagent_runner import SubAgentRunner
+from application.subagent_runner import SubAgentRunner, sub_plan_id
+from domain.actions import PlannedAction
 from domain.context import AgentContext, ContextSnapshot
-from domain.events import EventEnvelope, ScheduledEvent, SubAgentCompletedEvent
+from domain.events import (
+    AgentActionEvent,
+    EventEnvelope,
+    ScheduledEvent,
+    SubAgentCompletedEvent,
+    SubAgentTaskEvent,
+)
+from domain.plans import AgentPlan
 from domain.subtasks import SubTask, SubTaskStatus, TaskGraph
 from infrastructure.config.settings import Settings
 from infrastructure.prism_api.client import PrismApiClient
@@ -208,3 +216,57 @@ def test_coordinator_ignores_duplicate_completion() -> None:
 
     assert any(trace.event_name == "orchestration.duplicate" for trace in store.traces)
     assert store.get_task_graph("w1", "run-1").get_node("summary").status == C
+
+
+def test_coordinator_resumes_existing_subplan_on_duplicate_task() -> None:
+    store = MemoryStateStore()
+    queue = MemoryQueue()
+    store.save_task_graph(
+        TaskGraph(
+            plan_id="run-1",
+            workspace_id="w1",
+            project_id="p1",
+            nodes=[SubTask(node_id="summary", status=R)],
+        )
+    )
+    sub_plan = AgentPlan(
+        plan_id=sub_plan_id("run-1", "summary"),
+        parent_run_id="run-1",
+        node_id="summary",
+        source_event_id="evt-1",
+        workspace_id="w1",
+        project_id="p1",
+        goal="Summarize sprint.",
+        prompt_id="sprint.report",
+        prompt_version="1.0.0",
+        context_snapshot_ref="snapshot-1",
+        actions=[
+            PlannedAction(
+                plan_id=sub_plan_id("run-1", "summary"),
+                action_type="read",
+                tool_name="summarize_project",
+                instruction="Summarize the project.",
+                idempotency_key="run-1:summary:action-1",
+            )
+        ],
+    )
+    store.save_plan(sub_plan)
+
+    _coordinator(store, queue).handle(
+        EventEnvelope.wrap(
+            SubAgentTaskEvent(
+                workspace_id="w1",
+                project_id="p1",
+                plan_id="run-1",
+                node_id="summary",
+            )
+        )
+    )
+
+    message = queue.dequeue()
+    assert message is not None
+    action_event = message.envelope.event
+    assert isinstance(action_event, AgentActionEvent)
+    assert action_event.plan_id == sub_plan.plan_id
+    assert action_event.action_id == sub_plan.actions[0].action_id
+    assert any(trace.event_name == "subagent.resumed" for trace in store.traces)
