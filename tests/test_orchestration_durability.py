@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from domain.context import AgentContext, ContextSnapshot
 from domain.events import DomainEvent, EventEnvelope
-from domain.plans import AgentPlan
+from domain.plans import AgentPlan, PlanStatus
 from domain.subtasks import SubAgentResult, SubTask, SubTaskStatus, TaskGraph
 from infrastructure.state.memory_state_store import MemoryStateStore
 from infrastructure.state.prism_api_state_store import PrismApiStateStore
@@ -18,11 +18,12 @@ class _FakeAgentStatePrismClient:
 
     def __init__(self) -> None:
         self.memories: list[dict] = []
+        self.run: dict | None = None
 
     def get_agent_run_state(self, workspace_id: str, run_id: str) -> dict:
-        _ = (workspace_id, run_id)
+        _ = workspace_id
         return {
-            "run": {"runId": run_id, "status": "running"},
+            "run": self.run or {"runId": run_id, "status": "running"},
             "steps": [],
             "actions": [],
             "actionEvents": [],
@@ -128,6 +129,74 @@ def test_advance_reads_latest_durable_graph_and_bumps_version() -> None:
     assert reread is not None
     assert reread.get_node("a").status == C
     assert reread.version == 1
+
+
+def test_run_state_with_work_item_identity_fields_hydrates_without_error() -> None:
+    # The API now stamps the linked work item's readable identity onto every serialized
+    # AgentRun (workItemCode / workItemTitle / projectId) for the agent overview UI. These
+    # are server-derived and ride on the run object the /state endpoint returns. The runtime
+    # consumes that run object as an opaque dict, so the added keys must pass through while
+    # run-status hydration still works.
+    client = _FakeAgentStatePrismClient()
+    client.run = {
+        "runId": "run-1",
+        "workspaceId": "w1",
+        "status": "completed",
+        "workItemId": "11111111-1111-1111-1111-111111111111",
+        "workItemCode": "PRSM-001",
+        "workItemTitle": "Add SSO login",
+        "projectId": "22222222-2222-2222-2222-222222222222",
+    }
+    writer = _store(client, persist=True)
+    plan = AgentPlan(
+        plan_id="run-1",
+        source_event_id="evt-1",
+        workspace_id="w1",
+        project_id="p1",
+        goal="provision",
+        prompt_id="project_manager",
+        prompt_version="1.0.0",
+        context_snapshot_ref="ctx-1",
+    )
+    writer.save_plan(plan)
+
+    restored = _store(client).get_plan("w1", "run-1")
+
+    assert restored is not None
+    # The enriched run object did not break deserialization; status still hydrated from it.
+    assert restored.status == PlanStatus.COMPLETED
+
+
+def test_run_state_with_null_work_item_identity_hydrates_without_error() -> None:
+    # Workflow runs (e.g. refine_backlog) have no linked work item, so the identity fields
+    # arrive as explicit null. The runtime must tolerate them just the same.
+    client = _FakeAgentStatePrismClient()
+    client.run = {
+        "runId": "run-1",
+        "workspaceId": "w1",
+        "status": "failed",
+        "workItemId": None,
+        "workItemCode": None,
+        "workItemTitle": None,
+        "projectId": None,
+    }
+    writer = _store(client, persist=True)
+    plan = AgentPlan(
+        plan_id="run-1",
+        source_event_id="evt-1",
+        workspace_id="w1",
+        project_id="p1",
+        goal="refine backlog",
+        prompt_id="project_manager",
+        prompt_version="1.0.0",
+        context_snapshot_ref="ctx-1",
+    )
+    writer.save_plan(plan)
+
+    restored = _store(client).get_plan("w1", "run-1")
+
+    assert restored is not None
+    assert restored.status == PlanStatus.FAILED
 
 
 def test_duplicate_advance_is_idempotent_across_instances() -> None:
