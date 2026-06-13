@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from application.agent_run_sync import AgentRunSync
+from application.agent_run_sync import AgentRunAlreadyTerminalError, AgentRunSync
 from application.context_provider import ContextProvider
 from application.event_router import EventRouter
 from application.orchestrator import Orchestrator
@@ -79,27 +79,33 @@ class DomainEventHandler:
                 plan_id=plan.plan_id,
             )
         else:
-            if should_replan:
-                self.agent_run_sync.record_run_running(snapshot.context.workspace_id, agent_run_id)
-                self._trace(
-                    envelope,
-                    "plan.replanning",
-                    f"Replanning run {agent_run_id} for workflow {route.workflow.workflow_id}",
-                    {
-                        **event_trace_data(envelope.event),
-                        "previous_plan_status": existing_plan.status.value
-                        if existing_plan is not None
-                        else None,
-                    },
-                    plan_id=agent_run_id,
-                )
-            else:
-                self.agent_run_sync.record_run_started(
-                    snapshot.context,
-                    agent_run_id,
-                    objective=route.workflow.goal,
-                    prompt_version=route.workflow.prompt_version,
-                )
+            try:
+                if should_replan:
+                    self.agent_run_sync.record_run_running(
+                        snapshot.context.workspace_id, agent_run_id
+                    )
+                    self._trace(
+                        envelope,
+                        "plan.replanning",
+                        f"Replanning run {agent_run_id} for workflow {route.workflow.workflow_id}",
+                        {
+                            **event_trace_data(envelope.event),
+                            "previous_plan_status": existing_plan.status.value
+                            if existing_plan is not None
+                            else None,
+                        },
+                        plan_id=agent_run_id,
+                    )
+                else:
+                    self.agent_run_sync.record_run_started(
+                        snapshot.context,
+                        agent_run_id,
+                        objective=route.workflow.goal,
+                        prompt_version=route.workflow.prompt_version,
+                    )
+            except AgentRunAlreadyTerminalError as exc:
+                self._trace_terminal_run_skip(envelope, route.workflow, agent_run_id, exc)
+                return
             try:
                 task_graph = self.orchestrator.build_task_graph(snapshot.context, route.workflow)
                 task_graph = task_graph.model_copy(update={"plan_id": agent_run_id})
@@ -220,6 +226,17 @@ class DomainEventHandler:
             )
             return
 
+        try:
+            self.agent_run_sync.record_run_started(
+                snapshot.context,
+                agent_run_id,
+                objective=workflow.goal,
+                prompt_version=workflow.prompt_version,
+            )
+        except AgentRunAlreadyTerminalError as exc:
+            self._trace_terminal_run_skip(envelope, workflow, agent_run_id, exc)
+            return
+
         graph = self.orchestrator.build_orchestrated_graph(snapshot.context, workflow)
         graph = graph.model_copy(
             update={"plan_id": agent_run_id, "context_snapshot_ref": snapshot.ref}
@@ -227,12 +244,6 @@ class DomainEventHandler:
         snapshot = snapshot.model_copy(update={"plan_id": agent_run_id})
         self.state_store.save_context_snapshot(snapshot)
         self.state_store.save_task_graph(graph)
-        self.agent_run_sync.record_run_started(
-            snapshot.context,
-            agent_run_id,
-            objective=workflow.goal,
-            prompt_version=workflow.prompt_version,
-        )
         self._trace(
             envelope,
             "orchestration.started",
@@ -277,6 +288,25 @@ class DomainEventHandler:
                 {"node_id": node.node_id, "dispatch_event_id": task_event.event_id},
                 plan_id=agent_run_id,
             )
+
+    def _trace_terminal_run_skip(
+        self,
+        envelope: EventEnvelope,
+        workflow: WorkflowDefinition,
+        agent_run_id: str,
+        exc: AgentRunAlreadyTerminalError,
+    ) -> None:
+        self._trace(
+            envelope,
+            "run.terminal_skip",
+            f"Skipped run {agent_run_id} because it is already {exc.status}.",
+            {
+                **event_trace_data(envelope.event),
+                "workflow_id": workflow.workflow_id,
+                "run_status": exc.status,
+            },
+            plan_id=agent_run_id,
+        )
 
     def _trace(
         self,

@@ -21,6 +21,14 @@ from domain.plans import AgentPlan
 from infrastructure.prism_api.client import PrismApiClient
 
 AGENT_RUN_STEP_TITLE_MAX_LENGTH = 255
+AGENT_RUN_TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
+
+
+class AgentRunAlreadyTerminalError(RuntimeError):
+    def __init__(self, run_id: str, status: str) -> None:
+        super().__init__(f"Agent run {run_id} is already {status}.")
+        self.run_id = run_id
+        self.status = status
 
 
 class AgentRunSync:
@@ -38,7 +46,7 @@ class AgentRunSync:
     ) -> None:
         if not self.enabled:
             return
-        self.prism_client.create_agent_run(
+        response = self.prism_client.create_agent_run(
             context.workspace_id,
             _agent_run_create_payload(
                 run_id=run_id,
@@ -47,6 +55,7 @@ class AgentRunSync:
                 prompt_version=prompt_version,
             ),
         )
+        _raise_if_run_terminal(response, run_id)
 
     def record_plan_created(self, plan: AgentPlan, context: AgentContext | None = None) -> None:
         if not self.enabled:
@@ -92,11 +101,12 @@ class AgentRunSync:
     def record_run_running(self, workspace_id: str, run_id: str) -> None:
         if not self.enabled:
             return
-        self.prism_client.update_agent_run_status(
+        response = self.prism_client.update_agent_run_status(
             workspace_id,
             run_id,
             {"status": "running"},
         )
+        _raise_if_run_terminal(response, run_id)
 
     def record_action_state(
         self,
@@ -231,6 +241,12 @@ def _agent_run_create_payload(
         payload["workItemId"] = work_item_id
 
     return payload
+
+
+def _raise_if_run_terminal(response: dict[str, Any], run_id: str) -> None:
+    status = response.get("status")
+    if isinstance(status, str) and status in AGENT_RUN_TERMINAL_STATUSES:
+        raise AgentRunAlreadyTerminalError(run_id, status)
 
 
 def _trigger_type(context: AgentContext | None) -> str:

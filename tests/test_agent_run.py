@@ -284,6 +284,48 @@ def test_domain_event_handler_creates_agent_run_before_planning() -> None:
     assert prism_client.calls[1][1].endswith("/run-before-plan/steps")
 
 
+def test_domain_event_handler_skips_cancelled_run_before_planning() -> None:
+    prism_client = _CapturingPrismClient()
+    prism_client.create_agent_run_response_status = "cancelled"
+    workflow = WorkflowDefinition(
+        id="story.decompose",
+        trigger_types=["domain.story.created"],
+        required_skills=["task_decomposition"],
+        prompt_id="story.decompose",
+        prompt_version="1.0.0",
+        goal="Break down the story.",
+    )
+    state_store = MemoryStateStore()
+    queue = MemoryQueue()
+    source_event = EventEnvelope.wrap(
+        DomainEvent(
+            event_type="story.created",
+            workspace_id="w1",
+            project_id="p1",
+            correlation_id="cancelled-run",
+        )
+    )
+    planner = _AssertingPlanner(prism_client)
+    handler = DomainEventHandler(
+        _StaticRouter(workflow),
+        _StaticContextProvider(source_event, workflow),
+        planner,
+        state_store,
+        queue,
+        AgentRunSync(prism_client, enabled=True),
+        Orchestrator(),
+        SubAgentRunner(planner),
+    )
+
+    handler.handle(source_event)
+
+    assert state_store.get_plan("w1", "cancelled-run") is None
+    assert queue.is_empty()
+    assert [call[0] for call in prism_client.calls] == ["POST"]
+    assert state_store.traces[-1].event_name == "run.terminal_skip"
+    assert state_store.traces[-1].data["run_status"] == "cancelled"
+
+
 def test_domain_event_handler_marks_empty_plan_as_failed() -> None:
     prism_client = _CapturingPrismClient()
     workflow = WorkflowDefinition(
@@ -481,6 +523,7 @@ class _CapturingPrismClient(PrismApiClient):
     def __init__(self) -> None:
         super().__init__("https://api.example.test", "secret-token")
         self.calls: list[tuple[str, str, dict | None]] = []
+        self.create_agent_run_response_status: str | None = None
 
     def update_agent_run_status(self, workspace_id: str, run_id: str, payload: dict) -> dict:
         self.calls.append(
@@ -494,7 +537,10 @@ class _CapturingPrismClient(PrismApiClient):
 
     def create_agent_run(self, workspace_id: str, payload: dict) -> dict:
         self.calls.append(("POST", f"/workspaces/{workspace_id}/agent-runs/internal", payload))
-        return {"runId": payload.get("runId", "run-1"), "status": payload["status"]}
+        return {
+            "runId": payload.get("runId", "run-1"),
+            "status": self.create_agent_run_response_status or payload["status"],
+        }
 
     def upsert_agent_run_step(self, workspace_id: str, run_id: str, payload: dict) -> dict:
         self.calls.append(
